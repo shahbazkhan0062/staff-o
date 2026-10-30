@@ -1,0 +1,95 @@
+<?php
+
+return [
+
+    /*
+    |--------------------------------------------------------------------------
+    | Third Party Services
+    |--------------------------------------------------------------------------
+    |
+    | This file is for storing the credentials for third party services such
+    | as Mailgun, Postmark, AWS and more. This file provides the de facto
+    | location for this type of information, allowing packages to have
+    | a conventional file to locate the various service credentials.
+    |
+    */
+
+    'mailgun' => [
+        'domain' => env('MAILGUN_DOMAIN'),
+        'secret' => env('MAILGUN_SECRET'),
+        'endpoint' => env('MAILGUN_ENDPOINT', 'api.mailgun.net'),
+        'scheme' => 'https',
+    ],
+
+    'postmark' => [
+        'token' => env('POSTMARK_TOKEN'),
+    ],
+
+    'ses' => [
+        'key' => env('AWS_ACCESS_KEY_ID'),
+        'secret' => env('AWS_SECRET_ACCESS_KEY'),
+        'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+    ],
+
+    'stripe' => [
+        'key'               => env('STRIPE_KEY'),
+        'secret'            => env('STRIPE_SECRET'),
+        'webhook_secret'    => env('STRIPE_WEBHOOK_SECRET'),
+        'express_account_id' => env('STRIPE_EXPRESS_ACCOUNT_ID'), // fallback platform account
+    ],
+
+    'google' => [
+        'client_id'     => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect'      => env('GOOGLE_REDIRECT_URI'),
+    ],
+    
+    'vsure' => [
+        'auth_url'      => env('VSURE_AUTH_URL', 'https://login.vsure.com.au'),
+        'api_url'       => env('VSURE_API_URL', 'https://platform.vsure.com.au/v2'),
+        'client_id'     => env('VSURE_CLIENT_ID'),
+        'client_secret' => env('VSURE_CLIENT_SECRET'),
+        'audience'      => env('VSURE_AUDIENCE', 'https://platform.vsure.com.au/v2'),
+        'scope'         => env('VSURE_SCOPE', 'aus:production'),
+        'environment'   => env('VSURE_ENV', 'live'),
+    ],
+
+    'sendgrid' => [
+    'api_key' => env('SENDGRID_API_KEY'),
+    ],
+
+    'twilio' => [
+    'sid'           => env('TWILIO_SID'),
+    'auth_token'    => env('TWILIO_AUTH_TOKEN'),
+    'sms_from'      => env('TWILIO_SMS_FROM'),        // e.g. +61...
+    'whatsapp_from' => env('TWILIO_WHATSAPP_FROM'),   // e.g. whatsapp:+14155238886
+    'voice_from'    => env('TWILIO_VOICE_FROM'),
+    'voice_url'     => env('TWILIO_VOICE_URL'),       // TwiML endpoint for calls
+    'whatsapp_generic_template_sid' => env('TEMPLATE_SID'),
+],
+
+    'retell' => [
+        'api_key'              => env('RETELL_API_KEY'),
+        'chat_agent_id'        => env('RETELL_CHAT_AGENT_ID'),
+        'chat_timeout_minutes' => env('RETELL_CHAT_TIMEOUT_MINUTES', 180),
+        'escalation_email'     => env('RETELL_ESCALATION_EMAIL', 'abdulsamad.idenbrid@gmail.com'),
+
+        // NEW — the shared secret the lookup endpoints require.
+        // Generate with:  php -r "echo bin2hex(random_bytes(32));"
+        'function_secret'      => env('RETELL_FUNCTION_SECRET'),
+    ],
+
+    // NEW — WhatsApp notification system (account/job/payment events +
+    // identity OTP gate). Per-event on/off and admin numbers now live in
+    // the notification_settings / notification_recipients tables and are
+    // managed from the admin panel; this is only a fallback used before
+    // any admin numbers have been configured there.
+    'whatsapp_notifications' => [
+        // Comma-separated phone numbers, e.g. "+61400000000,+61400000001"
+        'admin_fallback_numbers' => env('WHATSAPP_ADMIN_FALLBACK_NUMBERS', ''),
+    ],
+
+    'google_vision' => [
+    'key' => env('GOOGLE_VISION_API_KEY'),
+     ],
+];

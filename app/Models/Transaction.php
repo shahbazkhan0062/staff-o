@@ -1,0 +1,32 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Transaction extends Model
+{
+    protected $fillable = [
+        'user_id',
+        'job_roster_id',
+        'payment_intent_id',
+        'charge_id',
+        'amount',
+        'discount',
+        'amount_charged',
+        'balance',
+        'service_fee',
+        'total_amount',
+        'currency',
+        'status',
+        'response',
+        'payment_option',
+        'balance_status',
+        'balance_payment_intent_id',
+        'balance_charged_at',
+    ];
+
+    public function user() {
+        return $this->belongsTo(User::class, 'user_id', 'id');
+    }
+}
