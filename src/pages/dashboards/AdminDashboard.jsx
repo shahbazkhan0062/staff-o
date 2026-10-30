@@ -14,6 +14,7 @@ import {
 import "./DashboardStyles.css";
 import { NavLink } from "react-router-dom";
 
+
 // Helper function to safely format numbers to exactly 2 decimal places with commas
 const formatCurrency = (value) => {
   const num = Number(value);
