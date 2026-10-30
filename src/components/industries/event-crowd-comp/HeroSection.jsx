@@ -1,0 +1,285 @@
+import React, { useState } from "react";
+
+export default function HeroSection() {
+  const [heroRole, setHeroRole] = useState("client");
+
+  return (
+    <section className="stf-hero">
+      <div className="stf-wrap">
+        <div className="stf-hero-grid">
+          <div>
+            <span className="stf-eyebrow">Event and crowd control</span>
+            <h1>Licensed crowd controllers for your event, without <span style={{ color: "var(--green)" }}> the agency markup</span></h1>
+            <p className="lead">
+              Book licensed, verified crowd controllers for festivals, concerts, sports and private events. Post your shift on Staffoo, get real-time updates and GPS-verified attendance, even at short notice.
+
+            </p>
+
+            {/* Role Switcher Tabs */}
+            <div className="stf-role-tabs">
+              <button
+                type="button"
+                className={`stf-role-tab ${heroRole === "client" ? "active" : ""}`}
+                onClick={() => setHeroRole("client")}
+              >
+                I need to hire security
+              </button>
+              <button
+                type="button"
+                className={`stf-role-tab ${heroRole === "guard" ? "active" : ""}`}
+                onClick={() => setHeroRole("guard")}
+              >
+                I'm security staff looking for work
+              </button>
+            </div>
+
+            {/* Client Panel */}
+            {heroRole === "client" && (
+              <div id="hero-panel-client">
+                <div className="stf-intent-card">
+                  <div className="stf-intent-head">
+                    <h3>Tell us about the event</h3>
+                    <span className="stf-free-tag">Free to post</span>
+                  </div>
+                  <div className="stf-intent-row">
+                    <div className="stf-field">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B6660" strokeWidth="2">
+                        <path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"></path>
+                        <circle cx="12" cy="10" r="2.6"></circle>
+                      </svg>
+                      <input type="text" placeholder="Suburb or postcode" />
+                    </div>
+                    <div className="stf-field">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B6660" strokeWidth="2">
+                        <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+                        <path d="M8 3v4M16 3v4M3 10h18"></path>
+                      </svg>
+                      <input type="text" placeholder="Event date" />
+                    </div>
+                  </div>
+                  <div className="stf-intent-row">
+                    <div className="stf-field">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B6660" strokeWidth="2">
+                        <circle cx="12" cy="8" r="4"></circle>
+                        <path d="M4 21v-1a8 8 0 0116 0v1"></path>
+                      </svg>
+                      <input type="text" placeholder="Security staff needed" />
+                    </div>
+                    <div className="stf-field">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B6660" strokeWidth="2">
+                        <circle cx="12" cy="12" r="9"></circle>
+                        <path d="M12 8v4l3 3"></path>
+                      </svg>
+                      <select defaultValue="Shift length">
+                        <option>Shift length</option>
+                        <option>Up to 4 hrs</option>
+                        <option>4–8 hrs</option>
+                        <option>8+ hrs</option>
+                      </select>
+                    </div>
+                  </div>
+                  <a href="#" className="stf-btn stf-btn-solid stf-btn-cta stf-btn-block">
+                    Get security staff applications
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <path d="M5 12h13M12 6l6 6-6 6"></path>
+                    </svg>
+                  </a>
+                  <p className="stf-intent-alt">Takes about 2 minutes · <a href="#">Or talk to our team</a></p>
+                  <div className="stf-live">
+                    <span className="stf-live-dot"></span> 34 crowd controllers active near Sydney today
+                  </div>
+                </div>
+                <p className="stf-intent-note">
+                  You review every application and choose who to hire Staffoo doesn't employ or supply security staff. <a href="#">Hiring for a business or agency?</a>
+                </p>
+
+                <div className="stf-trust-row">
+                  <div className="stf-trust-item">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0A7C6E" strokeWidth="2">
+                      <path d="M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    Licenses verified before anyone applies
+                  </div>
+                  <div className="stf-trust-item">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0A7C6E" strokeWidth="2">
+                      <path d="M12 2v20M17 6H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"></path>
+                    </svg>
+                    Pay after the shift is signed off
+                  </div>
+                  <div className="stf-trust-item">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0A7C6E" strokeWidth="2">
+                      <path d="M5 12h14M13 6l6 6-6 6"></path>
+                    </svg>
+                    No lock-in contract
+                  </div>
+                </div>
+
+                <div className="stf-proof">
+                  <div className="stf-avatars"><i></i><i></i><i></i><i></i></div>
+                  <p className="stf-proof-text">
+                    <b>2,400+ event organisers</b> have hired through Staffoo · 4.9★ average security staff rating
+                  </p>
+                </div>
+
+                <div className="stf-popular">
+                  Popular:
+                  <a >Festival security</a>
+                  <a >Wedding and private party</a>
+                  <a >Bars and nightlife</a>
+                  <a >RSA-trained security staff</a>
+                </div>
+              </div>
+            )}
+
+            {/* Security Staff Panel */}
+            {heroRole === "guard" && (
+              <div id="hero-panel-guard">
+                <div className="stf-intent-card">
+                  <div className="stf-intent-head">
+                    <h3>Find event security shifts</h3>
+                    <span className="stf-free-tag">Free to join</span>
+                  </div>
+                  <div className="stf-intent-row">
+                    <div className="stf-field">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B6660" strokeWidth="2">
+                        <path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"></path>
+                        <circle cx="12" cy="10" r="2.6"></circle>
+                      </svg>
+                      <input type="text" placeholder="Suburb or postcode" />
+                    </div>
+                    <div className="stf-field">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B6660" strokeWidth="2">
+                        <path d="M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                      </svg>
+                      <select defaultValue="License type">
+                        <option>License type</option>
+                        <option>Crowd Controller</option>
+                        <option>Security Officer (1A)</option>
+                        <option>RSA-trained</option>
+                      </select>
+                    </div>
+                  </div>
+                  <a href="#" className="stf-btn stf-btn-solid stf-btn-cta stf-btn-block">
+                    Sign up to see shifts near you
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <path d="M5 12h13M12 6l6 6-6 6"></path>
+                    </svg>
+                  </a>
+                  <p className="stf-intent-alt">Takes about 2 minutes · <a href="#">Already registered? Log in</a></p>
+                  <div className="stf-live">
+                    <span className="stf-live-dot"></span> 12 event shifts posted near Sydney this week
+                  </div>
+                </div>
+                <p className="stf-intent-note">
+                  Set your own rate and choose which shifts you apply for — Staffoo doesn't roster or assign your work.
+                </p>
+
+                <div className="stf-trust-row">
+                  <div className="stf-trust-item">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0A7C6E" strokeWidth="2">
+                      <path d="M12 2v20M17 6H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"></path>
+                    </svg>
+                    Paid once the shift is signed off
+                  </div>
+                  <div className="stf-trust-item">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0A7C6E" strokeWidth="2">
+                      <path d="M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    You set your own rate
+                  </div>
+                  <div className="stf-trust-item">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0A7C6E" strokeWidth="2">
+                      <path d="M5 12h14M13 6l6 6-6 6"></path>
+                    </svg>
+                    No subscription fees
+                  </div>
+                </div>
+
+                <div className="stf-proof">
+                  <div className="stf-avatars"><i></i><i></i><i></i><i></i></div>
+                  <p className="stf-proof-text">
+                    <b>3,100+ licensed security staff</b> find event shifts through Staffoo · new jobs posted daily
+                  </p>
+                </div>
+
+                <div className="stf-popular">
+                  Popular:
+                  <a >Festival shifts</a>
+                  <a >Weekend work</a>
+                  <a >Bar and nightlife</a>
+                  <a >RSA-trained roles</a>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right Column Product Preview */}
+          <div>
+            <div className="stf-preview" aria-hidden="true">
+              <div className="stf-pv-bar">
+                <div>
+                  <h4>Applications-Harbourfront Festival</h4>
+                  <div className="stf-pv-sub">Your dashboard · 3 hrs after posting</div>
+                </div>
+                <span className="stf-pv-tag">12 applied</span>
+              </div>
+              <div className="stf-pv-body">
+                <div className="stf-pv-row">
+                  <div className="stf-pv-avatar"></div>
+                  <div>
+                    <div className="stf-pv-name"><span className="stf-masked">S. Nguyen</span></div>
+                    <div className="stf-pv-meta">Crowd Controller · 6 yrs · 4.8★ (74 reviews)</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <span className="stf-pv-accept">Active</span>
+                  </div>
+                </div>
+                <div className="stf-pv-row">
+                  <div className="stf-pv-avatar" style={{ background: "linear-gradient(160deg,#14181C,#075E53)" }}></div>
+                  <div>
+                    <div className="stf-pv-name"><span className="stf-masked">R. Fatu</span></div>
+                    <div className="stf-pv-meta">Crowd Controller · 4 yrs · 5.0★ (51 reviews)</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <span className="stf-pv-accept">Active</span>
+                  </div>
+                </div>
+                <div className="stf-pv-row">
+                  <div className="stf-pv-avatar" style={{ background: "linear-gradient(160deg,#075E53,#0A7C6E)" }}></div>
+                  <div>
+                    <div className="stf-pv-name"><span className="stf-masked">D. Kowalski</span></div>
+                    <div className="stf-pv-meta">Crowd Controller · 8 yrs · 4.9★ (112 reviews)</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <span className="stf-pv-accept">Active</span>
+                  </div>
+                </div>
+                <div className="stf-pv-row" style={{ opacity: 0.55 }}>
+                  <div className="stf-pv-avatar" style={{ background: "linear-gradient(160deg,#0A7C6E,#14181C)" }}></div>
+                  <div>
+                    <div className="stf-pv-name"><span className="stf-masked">M. Ahmadi</span></div>
+                    <div className="stf-pv-meta">Crowd Controller · 5 yrs · 4.9★ (96 reviews)</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <span className="stf-pv-accept">Active</span>
+                  </div>
+                </div>
+              </div>
+              <div className="stf-pv-fade"></div>
+              <div className="stf-pv-lock">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                  <rect x="4" y="10" width="16" height="11" rx="2"></rect>
+                  <path d="M8 10V7a4 4 0 018 0v3"></path>
+                </svg>
+                Security staff profiles unlock once you post a job
+              </div>
+            </div>
+            <p className="stf-preview-caption">
+              Illustration of the client dashboard. Security staff names, contact details and profiles are only visible to signed-in clients.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}

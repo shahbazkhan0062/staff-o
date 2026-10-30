@@ -1,0 +1,99 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-transform: none;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+.react-datepicker-wrapper {
+  width: 60%;
+}
+
+.react-select__control--is-focused {
+  border-color: #0A7C6E !important;
+  box-shadow: 0 0 0 3px rgba(10, 124, 110, 0.12) !important;
+}
+
+.react-select__option--is-selected {
+  background-color: #0A7C6E !important;
+  color: #ffffff !important;
+}
+
+.react-select__option--is-focused:not(.react-select__option--is-selected) {
+  background-color: #E6F4F2 !important;
+  color: #0A7C6E !important;
+}
+
+.react-select__option--is-selected.react-select__option--is-focused {
+  background-color: #0A7C6E !important;
+  color: #ffffff !important;
+}
+
+.react-select__single-value {
+  color: #0A7C6E !important;
+}
+
+.doc-fullscreen-modal.modal {
+  max-width: 100vw;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  border-radius: 0;
+}
+
+.doc-fullscreen-modal .modal-dialog {
+  max-width: 100vw !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+}
+
+.doc-fullscreen-modal .modal-content {
+  height: 100vh;
+  border-radius: 0;
+}
+
+
+.auth-page-dark input:-webkit-autofill,
+.auth-page-dark input:-webkit-autofill,
+.auth-page-dark input:-webkit-autofill,
+.auth-page-dark input:-webkit-autofill:hover,
+.auth-page-dark input:-webkit-autofill:focus,
+.auth-page-dark input:-webkit-autofill:active {
+  -webkit-text-fill-color: #fff !important;
+  caret-color: #0A7C6E !important;
+  -webkit-box-shadow: 0 0 0px 1000px transparent inset !important;
+  box-shadow: 0 0 0px 1000px transparent inset !important;
+  transition: background-color 5000s ease-in-out 0s !important;
+}
+:root {
+  --danger: #dc2626;
+}
+
+@keyframes shakeRed {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  50% { transform: translateX(5px); }
+  75% { transform: translateX(-5px); }
+}
+.shake-red {
+  animation: shakeRed 0.4s ease-in-out;
+  border: 1.5px solid #dc2626 !important;
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15) !important;
+}
+.tab-btn.shake-red {
+  background-color: #dc2626 !important;
+  border-color: #dc2626 !important;
+  color: white !important;
+  box-shadow: 0 4px 10px rgba(220, 38, 38, 0.3) !important;
+}

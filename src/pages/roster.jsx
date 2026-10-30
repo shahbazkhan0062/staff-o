@@ -1,0 +1,1505 @@
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useSelector } from "react-redux";
+import { toast } from "react-toastify";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import {
+  startOfWeek,
+  format,
+  addDays,
+  subDays,
+  differenceInCalendarDays,
+  isToday,
+  parse,
+  isValid,
+  isSameDay,
+} from "date-fns";
+import Select from "react-select";
+import useSubmit from "../hooks/useSubmit";
+import Loader from "../components/Loader";
+import useFetch from "../hooks/useFetch";
+import ActivityDashboardModal from "../components/roster/ActivityDashboardModal";
+import TimeEditModal from "../components/roster/TimeEditModal";
+import DetailsModal from "../components/roster/DetailsModal";
+import ShiftBreakdownModal from "../components/roster/ShiftBreakdownModal";
+import AddJob from "./add-job";
+import "../assets/css/roster.css";
+import { useLocation } from "react-router-dom";
+
+const API_DATE_FORMAT = "yyyy-MM-dd HH:mm";
+const UPDATE_API_DATE_FORMAT = "MM-dd-yyyy HH:mm";
+
+const states_array = [
+  { label: 'Victoria', value: 'vic' },
+  { label: 'New South Wales', value: 'nsw' },
+  { label: 'Queensland', value: 'qld' },
+  { label: 'Tasmania', value: 'tas' },
+  { label: 'Western Australia', value: 'wa' },
+  { label: 'South Australia', value: 'sa' },
+  { label: 'ACT', value: 'act' },
+  { label: 'Northern Territory', value: 'nt' }
+];
+
+/* Helper to normalize response from api/state-jobs */
+const parseStateJobStats = (raw) => {
+  if (!raw) return { states: {}, all: null };
+
+  const rawData = raw.data || raw;
+  const statesList = rawData.states || (Array.isArray(rawData) ? rawData : []);
+  const allData = rawData.all || null;
+
+  const stateCodeMap = {
+    victoria: "vic",
+    vic: "vic",
+    "new south wales": "nsw",
+    nsw: "nsw",
+    queensland: "qld",
+    qld: "qld",
+    tasmania: "tas",
+    tas: "tas",
+    "western australia": "wa",
+    wa: "wa",
+    "south australia": "sa",
+    sa: "sa",
+    act: "act",
+    "australian capital territory": "act",
+    "northern territory": "nt",
+    nt: "nt",
+  };
+
+  const normalizeStateCode = (key) => {
+    if (!key) return null;
+    const clean = String(key).trim().toLowerCase();
+    return stateCodeMap[clean] || clean;
+  };
+
+  const statesMap = {};
+
+  if (Array.isArray(statesList)) {
+    statesList.forEach((item) => {
+      if (!item || typeof item !== "object") return;
+      const stateKey = normalizeStateCode(
+        item.state || item.state_code || item.state_name || item.name || item.code || item.value
+      );
+      if (!stateKey) return;
+
+      const todayJobs = Number(item.today?.jobs ?? item.today ?? 0);
+      const todayUncovered = Number(item.today?.uncovered ?? 0);
+      const todayCovered = Number(item.today?.covered ?? 0);
+
+      const weekJobs = Number(item.week?.jobs ?? item.week ?? 0);
+      const weekUncovered = Number(item.week?.uncovered ?? 0);
+      const weekCovered = Number(item.week?.covered ?? 0);
+
+      const totalJobs = Number(item.total?.jobs ?? item.total ?? 0);
+      const totalUncovered = Number(item.total?.uncovered ?? 0);
+      const totalCovered = Number(item.total?.covered ?? 0);
+
+      statesMap[stateKey] = {
+        todayJobs: isNaN(todayJobs) ? 0 : todayJobs,
+        todayUncovered: isNaN(todayUncovered) ? 0 : todayUncovered,
+        todayCovered: isNaN(todayCovered) ? 0 : todayCovered,
+        weekJobs: isNaN(weekJobs) ? 0 : weekJobs,
+        weekUncovered: isNaN(weekUncovered) ? 0 : weekUncovered,
+        weekCovered: isNaN(weekCovered) ? 0 : weekCovered,
+        totalJobs: isNaN(totalJobs) ? 0 : totalJobs,
+        totalUncovered: isNaN(totalUncovered) ? 0 : totalUncovered,
+        totalCovered: isNaN(totalCovered) ? 0 : totalCovered,
+      };
+    });
+  } else if (typeof statesList === "object") {
+    Object.entries(statesList).forEach(([key, val]) => {
+      const stateKey = normalizeStateCode(key);
+      if (!stateKey) return;
+      if (typeof val === "number" || typeof val === "string") {
+        const num = Number(val);
+        statesMap[stateKey] = { todayJobs: 0, weekJobs: isNaN(num) ? 0 : num, totalJobs: isNaN(num) ? 0 : num };
+      } else if (val && typeof val === "object") {
+        statesMap[stateKey] = {
+          todayJobs: Number(val.today?.jobs ?? val.today ?? 0),
+          weekJobs: Number(val.week?.jobs ?? val.week ?? 0),
+          totalJobs: Number(val.total?.jobs ?? val.total ?? 0),
+        };
+      }
+    });
+  }
+
+  let allSummary = allData ? {
+    todayJobs: Number(allData.today?.jobs ?? 0),
+    todayUncovered: Number(allData.today?.uncovered ?? 0),
+    todayCovered: Number(allData.today?.covered ?? 0),
+    weekJobs: Number(allData.week?.jobs ?? 0),
+    weekUncovered: Number(allData.week?.uncovered ?? 0),
+    weekCovered: Number(allData.week?.covered ?? 0),
+    totalJobs: Number(allData.total?.jobs ?? 0),
+    totalUncovered: Number(allData.total?.uncovered ?? 0),
+    totalCovered: Number(allData.total?.covered ?? 0),
+  } : null;
+
+  if (!allSummary && Object.keys(statesMap).length > 0) {
+    allSummary = Object.values(statesMap).reduce(
+      (acc, s) => ({
+        todayJobs: acc.todayJobs + (s.todayJobs || 0),
+        todayUncovered: acc.todayUncovered + (s.todayUncovered || 0),
+        todayCovered: acc.todayCovered + (s.todayCovered || 0),
+        weekJobs: acc.weekJobs + (s.weekJobs || 0),
+        weekUncovered: acc.weekUncovered + (s.weekUncovered || 0),
+        weekCovered: acc.weekCovered + (s.weekCovered || 0),
+        totalJobs: acc.totalJobs + (s.totalJobs || 0),
+        totalUncovered: acc.totalUncovered + (s.totalUncovered || 0),
+        totalCovered: acc.totalCovered + (s.totalCovered || 0),
+      }),
+      {
+        todayJobs: 0,
+        todayUncovered: 0,
+        todayCovered: 0,
+        weekJobs: 0,
+        weekUncovered: 0,
+        weekCovered: 0,
+        totalJobs: 0,
+        totalUncovered: 0,
+        totalCovered: 0,
+      }
+    );
+  }
+
+  return { states: statesMap, all: allSummary };
+};
+
+// react-select theming
+const selectStyles = {
+  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+  control: (base, state) => ({
+    ...base,
+    borderRadius: 10,
+    borderColor: state.isFocused ? "#0A7C6E" : "#e2e8f0",
+    boxShadow: state.isFocused ? "0 0 0 3px rgba(10,124,110,0.12)" : "none",
+    minHeight: 42,
+    fontSize: 14,
+    "&:hover": { borderColor: "#0A7C6E" },
+  }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: state.isSelected ? "#0A7C6E" : state.isFocused ? "#f0fdf9" : "#fff",
+    color: state.isSelected ? "#fff" : "#1e293b",
+    fontSize: 14,
+  }),
+  singleValue: (base) => ({ ...base, color: "#1e293b", fontWeight: 600 }),
+  placeholder: (base) => ({ ...base, color: "#94a3b8" }),
+};
+
+const parseHolidayDate = (value) => {
+  if (!value) return null;
+  if (/^\d{8}$/.test(value)) {
+    const year = Number(value.slice(0, 4));
+    const month = Number(value.slice(4, 6)) - 1;
+    const day = Number(value.slice(6, 8));
+    return new Date(year, month, day);
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const getDayKey = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}${month}${day}`;
+};
+
+function parseApiDate(dateValue) {
+  if (!dateValue) return null;
+  const parsed = parse(String(dateValue), API_DATE_FORMAT, new Date());
+  if (isValid(parsed)) return parsed;
+  const fallback = new Date(dateValue);
+  return isValid(fallback) ? fallback : null;
+}
+
+function extractOperationNoteText(shift) {
+  const raw =
+    shift?.operation_notes ||
+    shift?.operation_note ||
+    shift?.op_notes ||
+    shift?.op_note ||
+    "";
+  if (typeof raw === "string") return raw.trim();
+  if (Array.isArray(raw)) {
+    return raw.map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (item && typeof item === "object") {
+        return String(item.notes || item.note || item.content || item.operation_notes || "").trim();
+      }
+      return "";
+    }).filter(Boolean).join(" | ");
+  }
+  if (raw && typeof raw === "object") {
+    return String(raw.notes || raw.note || raw.content || raw.operation_notes || "").trim();
+  }
+  return "";
+}
+
+function combineDateAndTime(dateObj, timeValue) {
+  if (!dateObj || !timeValue) return null;
+  const [hours, minutes] = String(timeValue).split(":");
+  const merged = new Date(dateObj);
+  merged.setHours(Number(hours || 0), Number(minutes || 0), 0, 0);
+  return isValid(merged) ? merged : null;
+}
+
+const isShiftCancelled = (s) => {
+  if (!s) return false;
+  const rawJobStatus = String(s.job_status || "").toLowerCase().trim();
+  const rawStatusField = String(s.status || "").toLowerCase().trim();
+  return (
+    ["cancelled", "canceled", "deleted", "cancel", "delete"].includes(rawJobStatus) ||
+    ["cancelled", "canceled", "deleted", "cancel", "delete"].includes(rawStatusField) ||
+    Number(s.is_cancelled) === 1 ||
+    s.is_cancelled === true ||
+    s.is_cancelled === "1" ||
+    Number(s.is_deleted) === 1 ||
+    s.is_deleted === true ||
+    s.is_deleted === "1" ||
+    Boolean(s.deleted_at) ||
+    Boolean(s.cancelled_at)
+  );
+};
+
+export default function RosterPage() {
+  const location = useLocation();
+  const { userdata } = useSelector((state) => state.auth);
+  const userId = userdata?.data?.id || userdata?.id;
+  const userRole = userdata?.data?.user_type || userdata?.user_type;
+
+  const contractorAllowedStates = useMemo(() => {
+    if (userRole !== 'contractor') return [];
+
+    const raw =
+      userdata?.data?.states_allowed ??
+      userdata?.states_allowed ??
+      userdata?.data?.contractor?.states_allowed;
+
+    if (raw) {
+      try {
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((s) => String(s).toLowerCase());
+        }
+      } catch (e) {
+        console.error('Failed to parse states_allowed', e);
+      }
+    }
+
+    // Legacy fallback for contractors who haven't set states_allowed yet —
+    // derive a single state from their residential address, same as before.
+    const stateName = userdata?.data?.state || userdata?.state;
+    if (!stateName) return [];
+    const stateMap = {
+      'Victoria': 'vic',
+      'New South Wales': 'nsw',
+      'Queensland': 'qld',
+      'Tasmania': 'tas',
+      'Western Australia': 'wa',
+      'South Australia': 'sa',
+      'Australian Capital Territory': 'act',
+      'ACT': 'act',
+      'Northern Territory': 'nt',
+    };
+    return [stateMap[stateName] || stateName.toLowerCase()];
+  }, [userRole, userdata]);
+
+  const staffContractorId = userRole === "admin" ? 1 : userId;
+
+  const selectedStates = useMemo(() => {
+    return (new URLSearchParams(location.search).get("state") || "")
+      .split(",")
+      .map((state) => state.trim())
+      .filter(Boolean);
+  }, [location.search]);
+
+  const {
+    data: staffData,
+    loading: staffLoading,
+  } = useFetch(`api/get-contractor-active-staff/${staffContractorId}`, {
+    method: "POST",
+    isAuth: true,
+  });
+
+  const {
+    data: countData,
+    loading: countLoading,
+    refetch: refetchCountData,
+  } = useFetch("api/state-jobs", {
+    isAuth: true,
+    method: "GET",
+  });
+
+  const stateStats = useMemo(() => parseStateJobStats(countData), [countData]);
+  const stateStatsMap = stateStats.states;
+
+  const { submit, loading: submitLoading, data: submitData } = useSubmit({ isAuth: true });
+  const { submit: saveUserAssignment, loading: saveLoading } = useSubmit({ isAuth: true });
+  const { submit: submitHolidayList } = useSubmit({ isAuth: true });
+  const { submit: fetchContractorStaff } = useSubmit({ isAuth: true });
+  const [contractorGuards, setContractorGuards] = useState([]);
+  const [contractorGuardsLoading, setContractorGuardsLoading] = useState(false);
+
+  const [startDate, setStartDate] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [endDate, setEndDate] = useState(() => addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), 6));
+  const [hoveredDate, setHoveredDate] = useState(null);
+  const [modal, setModal] = useState(null);
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [weeksToView, setWeeksToView] = useState(1);
+  const [editForm, setEditForm] = useState({ date: null, startTime: "", endTime: "" });
+  const [timeEditError, setTimeEditError] = useState("");
+  // Payment breakdown returned by api/update-roster-time when a non-admin
+  // needs to confirm the shift-time change before it's actually applied.
+  const [timeBreakdown, setTimeBreakdown] = useState(null);
+  const [pendingTimePayload, setPendingTimePayload] = useState(null);
+  const [removeReason, setRemoveReason] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showLegend, setShowLegend] = useState(true);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const datePickerWrapRef = useRef(null);
+
+  /* Close calendar when clicking outside */
+  useEffect(() => {
+    if (!showDatePicker) return;
+    const handler = (e) => {
+      if (datePickerWrapRef.current && !datePickerWrapRef.current.contains(e.target)) {
+        setShowDatePicker(false);
+        setHoveredDate(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showDatePicker]);
+
+  const [holidays, setHolidays] = useState([]);
+
+  const fetchCustomerSites = useCallback(() => {
+    if (!userId) return;
+    const effectiveStates = selectedStates.length > 0
+      ? selectedStates
+      : (userRole === 'contractor' ? contractorAllowedStates : states_array.map(s => s.value));
+
+    if (effectiveStates.length === 0) return;
+
+    const payload = {
+      user_id: [userId],
+      states: effectiveStates,
+      start: format(startDate, "MM-dd-yyyy"),
+      end: format(endDate, "MM-dd-yyyy"),
+      roster_id: "1",
+    };
+    submit("api/fetch-customer-sites", payload, { method: "POST", silentErrorToast: true });
+  }, [userId, startDate, endDate, submit, selectedStates, userRole, contractorAllowedStates]);
+
+  const fetchHolidays = useCallback(async () => {
+    const effectiveStates = selectedStates.length > 0
+      ? selectedStates
+      : (userRole === 'contractor' ? contractorAllowedStates : states_array.map(s => s.value));
+    let allHolidays = [];
+    for (const state of effectiveStates) {
+      const res = await submitHolidayList(
+        'api/admin/get-public-holiday',
+        { state },
+        { method: 'POST', silentErrorToast: true }
+      );
+      let stateHolidays = [];
+      if (Array.isArray(res?.data?.data)) stateHolidays = res.data.data;
+      else if (Array.isArray(res?.data)) stateHolidays = res.data;
+      else if (Array.isArray(res?.holidays)) stateHolidays = res.holidays;
+      allHolidays = [...allHolidays, ...stateHolidays];
+    }
+    setHolidays(allHolidays);
+  }, [selectedStates, submitHolidayList, userRole, contractorAllowedStates]);
+
+  useEffect(() => {
+    fetchCustomerSites();
+  }, [fetchCustomerSites]);
+
+  useEffect(() => {
+    if (userId && (userRole === "staff" || selectedStates.length > 0 || userRole === 'contractor')) {
+      fetchHolidays();
+    }
+  }, [fetchHolidays, userId, userRole, selectedStates.length]);
+
+  const holidaysByDayKey = useMemo(() => {
+    return holidays.reduce((acc, holiday) => {
+      const date = parseHolidayDate(holiday?.date);
+      if (!date) return acc;
+      acc[getDayKey(date)] = holiday;
+      return acc;
+    }, {});
+  }, [holidays]);
+
+  const weekDays = useMemo(() => {
+    const totalDays = Math.max(1, differenceInCalendarDays(endDate, startDate) + 1);
+    return Array.from({ length: totalDays }, (_, i) => {
+      const d = addDays(startDate, i);
+      const dKey = getDayKey(d);
+      const holiday = holidaysByDayKey[dKey];
+      return {
+        label: format(d, "EEE dd/MM"),
+        dateObj: d,
+        dateLabel: format(d, "EEE, dd MMM"),
+        key: format(d, "yyyy-MM-dd"),
+        isToday: isToday(d),
+        short: format(d, "EEE"),
+        num: format(d, "dd"),
+        isHoliday: !!holiday,
+        holidayName: holiday ? holiday.holiday_name : null,
+      };
+    });
+  }, [startDate, endDate, holidaysByDayKey]);
+
+  const dateDisplayTitle = useMemo(() => {
+    if (!startDate || !endDate) return "";
+    if (isSameDay(startDate, endDate)) {
+      return format(startDate, "MMM d, yyyy");
+    }
+    const sameYear = startDate.getFullYear() === endDate.getFullYear();
+    const sameMonth = sameYear && startDate.getMonth() === endDate.getMonth();
+    if (sameMonth) {
+      return `${format(startDate, "MMM d")} - ${format(endDate, "d, yyyy")}`;
+    }
+    if (sameYear) {
+      return `${format(startDate, "MMM d")} - ${format(endDate, "MMM d, yyyy")}`;
+    }
+    return `${format(startDate, "MMM d, yyyy")} - ${format(endDate, "MMM d, yyyy")}`;
+  }, [startDate, endDate]);
+
+  /* Full state label for the active state (from URL ?state= or contractorAllowedStates) */
+  const activeStateLabel = useMemo(() => {
+    const statesToUse = selectedStates.length > 0
+      ? selectedStates
+      : (userRole === "contractor" ? contractorAllowedStates : []);
+
+    if (statesToUse.length === 0) return null;
+
+    const labels = statesToUse.map((st) => {
+      const found = states_array.find((s) => s.value.toLowerCase() === st.toLowerCase());
+      return found ? found.label : st.toUpperCase();
+    });
+    return labels.join(", ");
+  }, [selectedStates, userRole, contractorAllowedStates]);
+
+  const sites = useMemo(() => {
+    if (!submitData?.data) return [];
+    return submitData.data.map((site) => {
+      const roster = (site.job_roster || []).map((shift) => {
+        const startDate = parseApiDate(shift.start);
+        const endDate = parseApiDate(shift.end);
+        if (!startDate || !endDate) return null;
+        return { ...shift, startDate, endDate };
+      }).filter(Boolean);
+
+      const weekShifts = roster.filter((shift) =>
+        weekDays.some((d) => isSameDay(d.dateObj, shift.startDate))
+      );
+      const totalHours = weekShifts.reduce((sum, shift) => {
+        if (isShiftCancelled(shift)) return sum;
+        return sum + Number(shift.hours || 0);
+      }, 0);
+      const shiftWithCustomer = (site.job_roster || []).find(shift => shift?.customer?.name);
+      const clientName = shiftWithCustomer?.customer?.name || "Unknown Client";
+
+      return {
+        id: site.id,
+        displayName: site.site_name || "Unknown Site",
+        clientName: clientName,
+        siteData: site,
+        hoursDisplay: `${totalHours.toFixed(1)}h Total`,
+        jobRoster: roster,
+      };
+    });
+  }, [submitData, weekDays]);
+
+  const filteredSites = useMemo(() => {
+    if (!searchQuery.trim()) return sites;
+    const lowerQuery = searchQuery.toLowerCase();
+    return sites.filter((site) =>
+      site.displayName.toLowerCase().includes(lowerQuery) ||
+      site.clientName.toLowerCase().includes(lowerQuery)
+    );
+  }, [sites, searchQuery]);
+
+  const columnTotals = useMemo(() => {
+    const totals = Array(weekDays.length).fill(0);
+    let grandTotal = 0;
+    filteredSites.forEach((site) => {
+      site.jobRoster.forEach((shift) => {
+        if (isShiftCancelled(shift)) return;
+        const dayIndex = weekDays.findIndex((d) => isSameDay(d.dateObj, shift.startDate));
+        if (dayIndex !== -1) {
+          const shiftHrs = Number(shift.hours || 0);
+          totals[dayIndex] += shiftHrs;
+          grandTotal += shiftHrs;
+        }
+      });
+    });
+    return { totals, grandTotal };
+  }, [filteredSites, weekDays]);
+
+  const modalAcceptedBy = useMemo(() => {
+    const raw = modal?.shift?.accepted_by;
+    if (raw != null && raw !== "null" && raw !== "" && raw !== 0 && raw !== "0") {
+      return raw;
+    }
+    return null;
+  }, [modal?.shift?.accepted_by]);
+
+  useEffect(() => {
+    if (
+      userRole === "admin" &&
+      modalAcceptedBy &&
+      (modal?.type === "admin_assign" || modal?.type === "shift_breakdown")
+    ) {
+      let isMounted = true;
+      setContractorGuardsLoading(true);
+      fetchContractorStaff(
+        `api/get-contractor-active-staff/${modalAcceptedBy}`,
+        {},
+        { method: "POST" }
+      )
+        .then((res) => {
+          if (!isMounted) return;
+          const list =
+            res?.guards ||
+            res?.data?.guards ||
+            (Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []);
+          setContractorGuards(list);
+          setContractorGuardsLoading(false);
+        })
+        .catch((err) => {
+          if (!isMounted) return;
+          console.error("Failed to fetch contractor staff:", err);
+          setContractorGuards([]);
+          setContractorGuardsLoading(false);
+        });
+
+      return () => {
+        isMounted = false;
+      };
+    } else {
+      setContractorGuards([]);
+      setContractorGuardsLoading(false);
+    }
+  }, [userRole, modalAcceptedBy, modal?.type, modal?.shift?.id, fetchContractorStaff]);
+
+  const defaultGuards = useMemo(() => staffData?.guards || staffData?.data?.guards || [], [staffData]);
+
+  const guards = useMemo(() => {
+    if (userRole === "admin" && modalAcceptedBy) {
+      return contractorGuards;
+    }
+    return defaultGuards;
+  }, [userRole, modalAcceptedBy, contractorGuards, defaultGuards]);
+
+  const guardOptions = useMemo(() => {
+    return guards.map((g) => ({
+      value: g.id,
+      label: g.name ? g.name : `${g.first_name || ""} ${g.last_name || ""}`.trim() || g.email || `Staff #${g.id}`,
+    }));
+  }, [guards]);
+
+  const prevWeek = () => {
+    const span = weeksToView === 2 ? 14 : 7;
+    setStartDate((prev) => subDays(prev, span));
+    setEndDate((prev) => subDays(prev, span));
+  };
+  const nextWeek = () => {
+    const span = weeksToView === 2 ? 14 : 7;
+    setStartDate((prev) => addDays(prev, span));
+    setEndDate((prev) => addDays(prev, span));
+  };
+  const goToThisWeek = () => {
+    const thisMonday = startOfWeek(new Date(), { weekStartsOn: 1 });
+    const span = weeksToView === 2 ? 14 : 7;
+    setStartDate(thisMonday);
+    setEndDate(addDays(thisMonday, span - 1));
+  };
+  const handleSelect1W = () => {
+    setWeeksToView(1);
+    setEndDate(addDays(startDate, 6));
+  };
+  const handleSelect2W = () => {
+    setWeeksToView(2);
+    setEndDate(addDays(startDate, 13));
+  };
+
+  const getDayClassName = useCallback((date) => {
+    if (!date) return "";
+    const classes = [];
+    const dTime = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const sTime = startDate ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime() : null;
+    const eTime = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()).getTime() : null;
+
+    if (sTime !== null && eTime !== null && dTime >= sTime && dTime <= eTime) {
+      classes.push("is-roster-selected-week");
+      if (dTime === sTime) classes.push("is-roster-week-start");
+      if (dTime === eTime) classes.push("is-roster-week-end");
+    }
+
+    if (hoveredDate) {
+      const hStart = startOfWeek(hoveredDate, { weekStartsOn: 1 });
+      const hEnd = addDays(hStart, weeksToView === 2 ? 13 : 6);
+      const hsTime = new Date(hStart.getFullYear(), hStart.getMonth(), hStart.getDate()).getTime();
+      const heTime = new Date(hEnd.getFullYear(), hEnd.getMonth(), hEnd.getDate()).getTime();
+
+      if (dTime >= hsTime && dTime <= heTime) {
+        classes.push("is-roster-hovered-week");
+        if (dTime === hsTime) classes.push("is-roster-hover-start");
+        if (dTime === heTime) classes.push("is-roster-hover-end");
+      }
+    }
+    return classes.join(" ");
+  }, [startDate, endDate, hoveredDate, weeksToView]);
+
+  const handleDateSelect = (date) => {
+    if (!date) return;
+    const weekStart = startOfWeek(date, { weekStartsOn: 1 });
+    const numDays = weeksToView === 2 ? 14 : 7;
+    const weekEnd = addDays(weekStart, numDays - 1);
+    setStartDate(weekStart);
+    setEndDate(weekEnd);
+    setHoveredDate(null);
+    setShowDatePicker(false);
+  };
+  const handleRefresh = () => {
+    fetchCustomerSites();
+    if (typeof refetchCountData === "function") refetchCountData();
+  };
+
+  const openModalAction = (site, shift, dateStr, modalType, dateKey = null) => {
+    if (modalType === "add_shift" && userRole !== "admin") {
+      return;
+    }
+    const isSignedIn =
+      Number(shift?.signin_status) === 1 ||
+      shift?.signin_status === true ||
+      shift?.signin_status === "1" ||
+      Number(shift?.roster_activity?.signin_status) === 1 ||
+      shift?.roster_activity?.signin_status === true ||
+      shift?.roster_activity?.signin_status === "1";
+
+    if ((modalType === "time" || modalType === "delete") && isSignedIn) {
+      toast.warning("Cannot edit or delete a shift after sign in.");
+      return;
+    }
+    if (modalType === "time" && shift?.assigned_to && userRole !== "admin") {
+      toast.warning("Cannot edit time while a guard is assigned to this shift.");
+      return;
+    }
+    setSelectedUserId(shift?.assigned_to || "");
+    if (modalType === "time" && shift) {
+      setTimeEditError("");
+      setTimeBreakdown(null);
+      setPendingTimePayload(null);
+      const startT = (shift.start || "").split(" ")[1] || "00:00";
+      const endT = (shift.end || "").split(" ")[1] || "00:00";
+      setEditForm({
+        date: shift.startDate ? new Date(shift.startDate) : new Date(),
+        startTime: startT,
+        endTime: endT,
+      });
+    }
+    setModal({ type: modalType, site, shift, dateStr, dateKey });
+  };
+
+  const closeModal = () => {
+    setModal(null);
+    setSelectedUserId("");
+    setTimeEditError("");
+    setRemoveReason("");
+    setTimeBreakdown(null);
+    setPendingTimePayload(null);
+  };
+
+  const handleSave = async () => {
+    if (!modal) return;
+    try {
+      let res;
+      if (modal.type === "time" && modal.shift) {
+        setTimeEditError("");
+
+        if (timeBreakdown && pendingTimePayload) {
+          // Step 2: breakdown was already shown and the user confirmed it —
+          // resubmit the same payload with confirm=1 so the backend actually applies it.
+          res = await saveUserAssignment(`api/update-roster-time`, { ...pendingTimePayload, confirm: 1 }, { method: "POST" });
+        } else {
+          const selectedDate = editForm.date || modal.shift.startDate;
+          const startDateTime = combineDateAndTime(selectedDate, editForm.startTime);
+          const endDateTime = combineDateAndTime(selectedDate, editForm.endTime);
+          if (!startDateTime || !endDateTime) { setTimeEditError("Invalid times."); return; }
+          const normalizedEndDateTime = endDateTime <= startDateTime ? addDays(endDateTime, 1) : endDateTime;
+          const durationHours = (normalizedEndDateTime.getTime() - startDateTime.getTime()) / (1000 * 60 * 60);
+          if (durationHours < 4 || durationHours > 12) { setTimeEditError("Duration must be 4-12 hrs."); return; }
+          const payload = {
+            id: modal.shift.id,
+            start: format(startDateTime, UPDATE_API_DATE_FORMAT),
+            end: format(normalizedEndDateTime, UPDATE_API_DATE_FORMAT),
+            admin_id: userId,
+          };
+          res = await saveUserAssignment(`api/update-roster-time`, payload, { method: "POST" });
+
+          // Non-admin: backend wants the payment breakdown confirmed before it
+          // applies anything. Show it and stop here — modal stays open.
+          if (res?.confirm_required) {
+            setPendingTimePayload(payload);
+            setTimeBreakdown(res.breakdown || {});
+            return;
+          }
+        }
+      } else if (modal.type === "delete" && modal.shift) {
+        const jobId =
+          modal.shift.id ||
+          modal.shift.job_id ||
+          modal.shift.rawShift?.id ||
+          modal.shift.rawShift?.job_id;
+
+        if (!jobId) {
+          toast.error("Job ID not found for this job.");
+          return;
+        }
+
+        const payload = {
+          job_id: jobId,
+          user_id: userId,
+        };
+        res = await saveUserAssignment(`api/payment/cancel`, payload, { method: "POST" });
+      } else if (modal.type === "admin_assign" && modal.shift) {
+        if (!selectedUserId) { toast.error("Select a user."); return; }
+        const payload = userRole === "admin" ? { roster_id: modal.shift.id, admin_id: userId } : { roster_id: modal.shift.id, guard_id: selectedUserId }
+        const endpoint = userRole === "admin" ? `api/asap-jobs/accept/${selectedUserId}` : `api/contractor/jobs/accept/${userId}`
+        res = await saveUserAssignment(endpoint, payload, { method: "POST" });
+      } else if (modal.type === "remove_accepted" && modal.shift) {
+        if (!removeReason.trim()) {
+          toast.error("Please provide a reason for removal.");
+          return;
+        }
+        res = await saveUserAssignment(`api/remove-accepted/${modal.shift.id}`, {
+          user_id: userId,
+          reason: removeReason,
+        }, { method: "PUT" });
+      }
+      if (res === undefined) return;
+      fetchCustomerSites();
+      if (res.success) {
+        toast.success(modal.type === "delete" ? (res?.message || "Job deleted successfully!") : "Saved successfully!");
+      }
+      closeModal();
+    } catch (error) {
+      if (modal.type === "time") setTimeEditError(error.message || "Failed to save.");
+      else toast.error(error.message || "Failed to save.");
+    }
+  };
+
+  const getGuardShifts = () => {
+    if (!modal?.shift?.assigned_to) return [];
+    const guardId = modal.shift.assigned_to;
+    let allShifts = [];
+    sites.forEach((site) => {
+      site.jobRoster.forEach((shift) => {
+        if (String(shift.assigned_to) === String(guardId)) allShifts.push({ ...shift, siteName: site.displayName });
+      });
+    });
+    return allShifts;
+  };
+
+  const guardShiftsList = getGuardShifts();
+  const totalGuardHours = guardShiftsList.reduce((sum, s) => sum + Number(s.hours || 0), 0);
+
+  const openStateRosterInNewTab = (stateValue) => {
+    const targetUrl = `${window.location.origin}${location.pathname}?state=${stateValue}`;
+    window.open(targetUrl, "_blank");
+  };
+
+  const showRegionPicker =
+    selectedStates.length === 0 &&
+    (userRole === "admin" || (userRole === "contractor" && contractorAllowedStates.length > 1));
+
+  if (showRegionPicker) {
+    const visibleStates = userRole === 'contractor'
+      ? states_array.filter((s) => contractorAllowedStates.includes(s.value))
+      : states_array;
+
+    return (
+      <div className="staffoo-page-container">
+        <div className="staffoo-header-card">
+          <h2>Roster Operations</h2>
+          <p style={{ textTransform: "none", marginBottom: 0 }}>
+            Select a region below to manage sites, rosters, and shift assignments.
+          </p>
+        </div>
+
+        <div className="staffoo-grid-container">
+          {visibleStates.length === 0 ? (
+            <div className="text-center py-5" style={{ gridColumn: '1 / -1' }}>
+              <i className="fa-solid fa-map-pin fa-2x text-muted mb-3"></i>
+              <h5 className="text-muted">No region available</h5>
+              <p className="text-muted small">Your state could not be matched to a roster region.</p>
+            </div>
+          ) : (
+            visibleStates.map((stateInfo) => {
+              const isFeatured = stateInfo.value === 'vic' || stateInfo.value === 'nsw';
+              const stats = stateStatsMap[stateInfo.value.toLowerCase()];
+              const todayJobs = stats?.todayJobs ?? 0;
+              const todayCovered = stats?.todayCovered ?? 0;
+              const todayUncovered = stats?.todayUncovered ?? 0;
+              const weekJobs = stats?.weekJobs ?? 0;
+              const weekCovered = stats?.weekCovered ?? 0;
+              const weekUncovered = stats?.weekUncovered ?? 0;
+
+              return (
+                <button
+                  key={stateInfo.value}
+                  type="button"
+                  className={`staffoo-state-card ${isFeatured ? 'is-featured' : ''}`}
+                  onClick={() => openStateRosterInNewTab(stateInfo.value)}
+                >
+                  {isFeatured && <span className="featured-watermark">{stateInfo.value.toUpperCase()}</span>}
+                  <div className="state-card-left">
+                    {/* Badge Above State Name: Today & Week */}
+                    <div className="state-card-badges mb-2">
+                      {countLoading ? (
+                        <span className="state-badge-pill loading-jobs">
+                          <span className="spinner-border spinner-border-sm me-1" role="status" style={{ width: "9px", height: "9px", borderWidth: "1.5px" }}></span>
+                          Loading…
+                        </span>
+                      ) : (
+                        <>
+                          <span
+                            className={`state-badge-pill ${todayJobs > 0 ? "badge-today-active" : "badge-pill-muted"}`}
+                            title={`Today: ${todayCovered} covered, ${todayUncovered} uncovered (Total: ${todayJobs})`}
+                          >
+                            <i className="fa-solid fa-bolt me-1"></i>
+                            <span className="badge-period-label">Today:</span>
+                            <span className="badge-stat-item stat-covered">
+                              <strong>{todayCovered}</strong> cov
+                            </span>
+                            <span className="badge-stat-dot">·</span>
+                            <span className={`badge-stat-item stat-uncovered ${todayUncovered > 0 ? "has-val" : ""}`}>
+                              <strong>{todayUncovered}</strong> uncov
+                            </span>
+                          </span>
+
+                          <span
+                            className={`state-badge-pill ${weekJobs > 0 ? "badge-week-active" : "badge-pill-muted"}`}
+                            title={`Week: ${weekCovered} covered, ${weekUncovered} uncovered (Total: ${weekJobs})`}
+                          >
+                            <i className="fa-solid fa-calendar-days me-1"></i>
+                            <span className="badge-period-label">Week:</span>
+                            <span className="badge-stat-item stat-covered">
+                              <strong>{weekCovered}</strong> cov
+                            </span>
+                            <span className="badge-stat-dot">·</span>
+                            <span className={`badge-stat-item stat-uncovered ${weekUncovered > 0 ? "has-val" : ""}`}>
+                              <strong>{weekUncovered}</strong> uncov
+                            </span>
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <span className="state-name">{stateInfo.label}</span>
+                  </div>
+                  <div className="state-card-right">
+                    <i className="fa-solid fa-arrow-right"></i>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (userRole === "contractor" && contractorAllowedStates.length === 0 && selectedStates.length === 0) {
+    return (
+      <div className="staffoo-page-container">
+        <div className="staffoo-header-card">
+          <span className="staffoo-eyebrow"><span className="dot"></span> Roster</span>
+          <h2>No Operating States Set</h2>
+          <p style={{ textTransform: "none" }}>
+            You haven't selected any states you operate in yet. Add them in your profile to see your roster.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (staffLoading || submitLoading) return <Loader />;
+
+  return (
+    <div className="vibrant-roster-app">
+      <header className="vr-header">
+        <div className="vr-nav">
+          <button onClick={prevWeek} className="vr-icon-btn" title="Previous">
+            <i className="fa fa-chevron-left"></i>
+          </button>
+
+          {/* Clickable week range — opens date picker */}
+          <div className="vr-date-picker-wrap" ref={datePickerWrapRef} style={{ position: "relative" }}>
+            <button
+              className="vr-date-display"
+              onClick={() => {
+                setHoveredDate(null);
+                setShowDatePicker((p) => !p);
+              }}
+              title="Click to select week"
+              type="button"
+            >
+              <i className="fa-regular fa-calendar"></i>
+              <span>{dateDisplayTitle}</span>
+            </button>
+
+            {showDatePicker && (
+              <div
+                style={{ position: "absolute", top: "110%", left: "50%", transform: "translateX(-50%)", zIndex: 9999 }}
+                onMouseLeave={() => setHoveredDate(null)}
+              >
+                <DatePicker
+                  selected={startDate}
+                  onChange={handleDateSelect}
+                  inline
+                  calendarStartDay={1}
+                  dayClassName={getDayClassName}
+                  renderDayContents={(day, date) => (
+                    <div
+                      style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+                      onMouseEnter={() => setHoveredDate(date)}
+                    >
+                      {day}
+                    </div>
+                  )}
+                />
+              </div>
+            )}
+          </div>
+
+          <button onClick={nextWeek} className="vr-icon-btn" title="Next">
+            <i className="fa fa-chevron-right"></i>
+          </button>
+          <button onClick={goToThisWeek} className="vr-btn-today">Today</button>
+        </div>
+
+        {/* State name in header mid */}
+        <div className="vr-header-mid">
+          {activeStateLabel && (
+            <div className="vr-state-title">
+              <i className="fa-solid fa-location-dot"></i>
+              <span>{activeStateLabel}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="vr-actions">
+          <div className="vr-search">
+            <i className="fa fa-search"></i>
+            <input type="text" placeholder="Search sites..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          </div>
+          <div className="vr-toggles">
+            <button className={weeksToView === 1 ? 'active' : ''} onClick={handleSelect1W}>1W</button>
+            <button className={weeksToView === 2 ? 'active' : ''} onClick={handleSelect2W}>2W</button>
+          </div>
+          <button onClick={handleRefresh} className="vr-icon-btn" title="Refresh"><i className="fa fa-refresh"></i></button>
+          <button onClick={() => setShowLegend(!showLegend)} className={`vr-btn-legend ${showLegend ? 'active' : ''}`}>
+            <i className="fa fa-paint-brush"></i> Legend
+          </button>
+        </div>
+      </header>
+
+      {showLegend && (
+        <div className="vr-legend-panel">
+          <span className="vr-badge bg-pending">Pending</span>
+          <span className="vr-badge bg-confirmed">Confirmed</span>
+          <span className="vr-badge bg-completed">Completed</span>
+          <span className="vr-badge bg-published">Publish</span>
+          <span className="vr-badge bg-unpublished">Unpublish</span>
+          <span className="vr-badge bg-rejected">Rejected</span>
+          <span className="vr-badge bg-missed">Missed</span>
+          <span className="vr-badge bg-cancelled">Cancelled</span>
+          <span className="vr-badge bg-mock">Mock</span>
+          <span className="vr-badge bg-op-notes">OpNotes</span>
+          <span className="vr-badge bg-uncoverd">Uncovered</span>
+        </div>
+      )}
+
+      <div className="vr-matrix-scroll-container">
+        <div className="vr-matrix-header">
+          <div className="vr-col-site">Sites and Summary</div>
+          {weekDays.map((day) => (
+            <div
+              key={day.key}
+              className={`vr-col-day ${day.isToday ? 'is-today' : ''} ${day.isHoliday ? 'is-holiday-header' : ''}`}
+              title={day.holidayName || ''}
+            >
+              <div className="day-name">{day.short}</div>
+              <div className="day-number">{day.num}</div>
+              {day.isHoliday && (
+                <div className="vr-holiday-indicator" title={day.holidayName}>
+                  <i className="fa-solid fa-star"></i>
+                  <span>{day.holidayName || 'Public Holiday'}</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="vr-matrix-body">
+          {filteredSites.length === 0 ? (
+            <div className="vr-no-data" style={{ padding: "40px", textAlign: "center", color: "#64748b", textTransform: "none" }}>
+              No schedules match your search.
+            </div>
+          ) : (
+            filteredSites.map((site) => (
+              <div key={site.id} className="vr-matrix-row">
+                <div className="vr-col-site vr-site-info">
+                  <div className="vr-site-name" style={{ lineHeight: 1.2 }}>{site.displayName}</div>
+                  <div style={{ fontSize: "11px", color: "#64748b", margin: "4px 0", fontWeight: "600" }}>
+                    <i className="fa-regular fa-building" style={{ marginRight: '4px' }}></i>
+                    {site.clientName}
+                  </div>
+                  <div>
+                    <span className="vr-site-hours">
+                      <i className="fa fa-clock-o fas fa-clock" style={{ marginRight: '4px' }}></i>
+                      {site.hoursDisplay} Total
+                    </span>
+                  </div>
+                </div>
+
+                {weekDays.map((day) => {
+                  const dayShifts = site.jobRoster.filter((s) => isSameDay(s.startDate, day.dateObj));
+                  return (
+                    <div
+                      key={day.key}
+                      className={`vr-col-day vr-day-cell ${day.isToday ? 'is-today' : ''} ${day.isHoliday ? 'is-holiday-cell' : ''}`}
+                    >
+                      {/* Mobile Day Header (Only visible on mobile via CSS) */}
+                      <div className="mobile-day-header">
+                        <span className="mdh-date">
+                          {/* Fixed universally supported Calendar icon */}
+                          <i className="fa fa-calendar fas fa-calendar-alt" style={{ marginRight: '6px' }}></i>
+                          {day.dateLabel}
+                        </span>
+                        {day.isHoliday && (
+                          <span className="mdh-holiday">
+                            <i className="fa-solid fa-star"></i> {day.holidayName || 'Holiday'}
+                          </span>
+                        )}
+                      </div>
+
+                      {dayShifts.length === 0 ? (
+                        userRole !== "contractor" && (
+                          <div className="vr-empty-add-btn" onClick={() => openModalAction(site, null, day.dateLabel, "add_shift", day.key)}>
+                            <i className="fa fa-plus"></i>
+                            <span className="mobile-only-text">Add Shift</span>
+                          </div>
+                        )
+                      ) : (
+                        <div className="vr-shift-container">
+                          {dayShifts.map((shift) => {
+                            const isCancelled = isShiftCancelled(shift);
+                            const rawJobStatus = String(shift.job_status || "").toLowerCase().trim();
+                            const rawStatusField = String(shift.status || "").toLowerCase().trim();
+                            const isDeleted =
+                              rawJobStatus === "deleted" ||
+                              rawJobStatus === "delete" ||
+                              rawStatusField === "deleted" ||
+                              rawStatusField === "delete" ||
+                              Number(shift.is_deleted) === 1 ||
+                              shift.is_deleted === true ||
+                              Boolean(shift.deleted_at);
+                            const cancelledLabel = isDeleted ? "Deleted" : "Cancelled";
+
+                            const status = isCancelled
+                              ? "cancelled"
+                              : shift.job_status
+                              ? shift.job_status.replace('_', '-')
+                              : 'pending';
+                            const hasNote = Boolean(extractOperationNoteText(shift));
+                            const contractorName =
+                              shift.contractor?.name ||
+                              shift.contractor?.contractor?.company_name ||
+                              shift.contractor?.company_name ||
+                              (shift.contractor?.first_name ? `${shift.contractor.first_name} ${shift.contractor.last_name || ""}`.trim() : null) ||
+                              (shift.accepted_by ? `Contractor #${shift.accepted_by}` : null);
+                            const isAccepted = Boolean(shift.accepted_by || shift.contractor);
+
+                            const shiftDuration = Number(shift.hours || 0) || (shift.endDate && shift.startDate ? (shift.endDate - shift.startDate) / 3600000 : 0);
+                            const invoiceType = Number(shift.contractor_invoice);
+                            const isConfirmed = String(shift.job_status || "").toLowerCase() === "confirmed";
+                            const isPending = String(shift.job_status || "").toLowerCase() === "pending";
+                            const isPendingOrConfirmed = isPending || isConfirmed;
+                            const isSignedIn =
+                              Number(shift.signin_status) === 1 ||
+                              shift.signin_status === true ||
+                              shift.signin_status === "1" ||
+                              Number(shift.roster_activity?.signin_status) === 1 ||
+                              shift.roster_activity?.signin_status === true ||
+                              shift.roster_activity?.signin_status === "1";
+
+                            // Contractor Zero Invoice Breakdown: Contractor + Invoice 0 + Confirmed + Duration > 12
+                            const isContractorZeroInvoiceBreakdown = !isCancelled && userRole === "contractor" && invoiceType === 0 && isConfirmed && shiftDuration > 12;
+                            const isContractorZeroInvoiceBreakdownText = !isCancelled && userRole === "contractor" && invoiceType === 0 && isPending;
+
+                            // Assign Staff Button: Shown when staff not assigned AND (Admin OR Invoice 1 OR (Invoice 0 & Confirmed & Duration <= 12))
+                            const showAssignButton = !isCancelled && !shift.assigned_to && (
+                              userRole === "admin" ||
+                              invoiceType === 1 ||
+                              (userRole === "contractor" && invoiceType === 0 && isConfirmed && shiftDuration <= 12)
+                            );
+
+                            // Remove Accepted Button: Shown if pending and accepted_by is set, and user is admin or contractor
+                            const showRemoveButton = !isCancelled && isPending && isAccepted && (userRole === "admin" || userRole === "contractor");
+
+                            return (
+                              <div key={shift.id} className={`vr-shift-card bg-${status} ${isCancelled ? "is-cancelled" : ""}`}>
+                                {hasNote && <div className="vr-note-dot"></div>}
+                                {isContractorZeroInvoiceBreakdown && (
+                                  <span className="vr-breakdown-indicator" title="Requires Job Breakdown (>12h, Invoice 0)">
+                                    <i className="fa-solid fa-scissors" style={{ fontSize: "10px" }}></i>
+                                  </span>
+                                )}
+                                <div className="vr-shift-time">
+                                  {isCancelled ? (
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", gap: "4px" }}>
+                                      <span style={{ textDecoration: "line-through", opacity: 0.9, fontSize: "11px", whiteSpace: "nowrap" }}>
+                                        {format(shift.startDate, "HH:mm")} - {format(shift.endDate, "HH:mm")}
+                                      </span>
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          alignItems: "flex-end",
+                                          lineHeight: 1,
+                                          maxWidth: "55%",
+                                        }}
+                                      >
+                                        {userRole === "admin" && shift.accepted_by != null && contractorName && (
+                                          <span
+                                            style={{
+                                              fontSize: "4.5px",
+                                              color: "#ffffff",
+                                              marginBottom: "2px",
+                                              whiteSpace: "nowrap",
+                                              overflow: "hidden",
+                                              textOverflow: "ellipsis",
+                                              maxWidth: "85px",
+                                              textAlign: "right",
+                                              letterSpacing: "0.2px",
+                                              display: "inline-block",
+                                            }}
+                                            title={`Accepted by: ${contractorName}`}
+                                          >
+                                            {contractorName}
+                                          </span>
+                                        )}
+                                        <span className="vr-cancelled-badge" title={`This job has been ${cancelledLabel.toLowerCase()}`}>
+                                          <i className="fa-solid fa-ban" style={{ color: "#fca5a5" }}></i>
+                                          {/* {cancelledLabel} */}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ) : isContractorZeroInvoiceBreakdown ? (
+                                    <span
+                                      className="d-block w-100"
+                                      style={{ color: '#082f49', fontWeight: 800, cursor: 'pointer', fontSize: '10.5px', lineHeight: '1.3', whiteSpace: 'normal', textTransform: 'uppercase' }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openModalAction(site, shift, day.dateLabel, "shift_breakdown", day.key);
+                                      }}
+                                    >
+                                      Job confirmed.<br />Click here to split
+                                    </span>
+                                  ) : isContractorZeroInvoiceBreakdownText ? (
+                                    <span
+                                      className="d-block w-100"
+                                      style={{ color: '#082f49', fontWeight: 800, fontSize: '10.5px', lineHeight: '1.3', whiteSpace: 'normal', textTransform: 'uppercase' }}
+                                    >
+                                      Waiting for client<br />confirmation...
+                                    </span>
+                                  ) : (
+                                    <>
+                                      {format(shift.startDate, "HH:mm")} - {format(shift.endDate, "HH:mm")}
+                                      {/* Contractor Accepted Indicator */}
+                                      {isAccepted && (
+                                        <div
+                                          style={{
+                                            marginLeft: "auto",
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            alignItems: "flex-end",
+                                            lineHeight: 1,
+                                            maxWidth: "55%",
+                                          }}
+                                        >
+                                          {contractorName && (
+                                            <span
+                                              style={{
+                                                fontSize: "4.5px",
+                                                // fontWeight: 800,
+                                                color: "#ffffff",
+                                                // background: "rgba(0, 0, 0, 0.3)",
+                                                // backdropFilter: "blur(2px)",
+                                                // padding: "1px 5px",
+                                                // borderRadius: "4px",
+                                                marginBottom: "2px",
+                                                whiteSpace: "nowrap",
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                maxWidth: "85px",
+                                                textAlign: "right",
+                                                letterSpacing: "0.2px",
+                                                display: "inline-block",
+                                              }}
+                                              title={`Accepted by: ${contractorName}`}
+                                            >
+                                              {contractorName}
+                                            </span>
+                                          )}
+                                          <span
+                                            className="vr-accepted-icon"
+                                            title={`Accepted by Contractor: ${contractorName || 'Contractor'}`}
+                                            style={{ margin: 0 }}
+                                          >
+                                            <i className="fa fa-handshake-o fas fa-handshake"></i>
+                                          </span>
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                                {!isContractorZeroInvoiceBreakdown && (
+                                  <div className="vr-shift-guard">
+                                    {isCancelled ? (
+                                      <span style={{ color: "#fee2e2", fontStyle: "italic", fontWeight: 700, fontSize: "10px" }}>
+                                        <i className="fa-solid fa-circle-xmark me-1"></i>
+                                        {shift?.guards?.name ? `${cancelledLabel} (${shift.guards.name})` : `${cancelledLabel} Job`}
+                                      </span>
+                                    ) : (
+                                      shift?.guards?.name || "Unassigned"
+                                    )}
+                                  </div>
+                                )}
+                                <div
+                                  className="vr-shift-actions"
+                                  onWheel={(e) => {
+                                    if (e.deltaY !== 0) {
+                                      e.stopPropagation();
+                                      e.currentTarget.scrollLeft += e.deltaY;
+                                    }
+                                  }}
+                                >
+                                  <button title="Activity" onClick={() => openModalAction(site, shift, day.dateLabel, "activity")}>
+                                    <i className="fa fa-list"></i>
+                                  </button>
+                                  <button title="Details" onClick={() => openModalAction(site, shift, day.dateLabel, "details")}>
+                                    <i className="fa fa-info"></i>
+                                  </button>
+                                  {!isCancelled && userRole === "admin" && isPendingOrConfirmed && !isSignedIn && (
+                                    <button title="Time Edit" onClick={() => openModalAction(site, shift, day.dateLabel, "time")}>
+                                      <i className="fa fa-edit fas fa-edit"></i>
+                                    </button>
+                                  )}
+                                  {!isCancelled && isContractorZeroInvoiceBreakdown && (
+                                    <button title="Breakdown Shift" onClick={() => openModalAction(site, shift, day.dateLabel, "shift_breakdown")}>
+                                      <i className="fa-solid fa-scissors"></i>
+                                    </button>
+                                  )}
+                                  {!isCancelled && showAssignButton && (
+                                    <button title="Assign" onClick={() => openModalAction(site, shift, day.dateLabel, "admin_assign")}>
+                                      <i className="fa fa-user-plus"></i>
+                                    </button>
+                                  )}
+                                  {!isCancelled && showRemoveButton && (
+                                    <button title="Remove from Job" onClick={() => openModalAction(site, shift, day.dateLabel, "remove_accepted")}>
+                                      <i className="fa-solid fa-user-xmark text-danger"></i>
+                                    </button>
+                                  )}
+                                   {!isCancelled && userRole === "admin" && isPendingOrConfirmed && !isSignedIn && (
+                                    <button className="vr-action-delete" title="Delete Job" onClick={() => openModalAction(site, shift, day.dateLabel, "delete")}>
+                                      <i className="fa-solid fa-trash text-danger"></i>
+                                    </button>
+                                  )} 
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {userRole !== "contractor" && (
+                            <div className="vr-small-add-btn" onClick={() => openModalAction(site, null, day.dateLabel, "add_shift", day.key)}>
+                              <i className="fa fa-plus"></i> Add
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="vr-matrix-footer">
+          <div className="vr-col-site vr-total-label">
+            Grand Total <span>{columnTotals.grandTotal.toFixed(1)}H</span>
+          </div>
+          {columnTotals.totals.map((total, i) => (
+            <div key={i} className={`vr-col-day vr-total-val ${weekDays[i].isHoliday ? 'is-holiday-cell' : ''}`}>
+              {/* Only shows on mobile to identify the day */}
+              <span className="mobile-footer-day">{weekDays[i].short}</span>
+              {total.toFixed(1)}H
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {modal?.type === "activity" && <ActivityDashboardModal modal={modal} closeModal={closeModal} userRole={userRole} />}
+      {modal?.type === "time" && <TimeEditModal modal={modal} closeModal={closeModal} editForm={editForm} setEditForm={setEditForm} timeEditError={timeEditError} clearTimeEditError={() => setTimeEditError("")} handleSave={handleSave} saveLoading={saveLoading} breakdown={timeBreakdown} onBack={() => { setTimeBreakdown(null); setPendingTimePayload(null); }} />}
+      {modal?.type === "details" && <DetailsModal modal={modal} closeModal={closeModal} guardShiftsList={guardShiftsList} totalGuardHours={totalGuardHours} />}
+      {modal?.type === "shift_breakdown" && <ShiftBreakdownModal modal={modal} closeModal={closeModal} onSuccess={fetchCustomerSites} staffOptions={staffData?.guards || []} />}
+
+      {modal?.type === "delete" && (
+        <div className="vr-modal-backdrop" onClick={closeModal}>
+          <div className="vr-modal-container" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "480px" }}>
+            <div className="vr-modal-header" style={{ background: "linear-gradient(120deg, #450a0a, #7f1d1d)" }}>
+              <h3 style={{ color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>
+                <i className="fa-solid fa-triangle-exclamation" style={{ color: "#fca5a5" }}></i>
+                Delete / Cancel Job
+              </h3>
+              <button onClick={closeModal}><i className="fa fa-times"></i></button>
+            </div>
+            <div className="vr-modal-content">
+              <div className="alert alert-danger d-flex align-items-center gap-2 mb-3" style={{ fontSize: "13px" }}>
+                <i className="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                <span>Are you sure you want to delete this job? This will cancel the associated payment hold and remove the shift.</span>
+              </div>
+              <div className="vr-modal-summary" style={{ marginBottom: "15px" }}>
+                <div><strong>Site:</strong> {modal.site?.displayName}</div>
+                <div><strong>Date:</strong> {modal.dateStr}</div>
+                <div><strong>Job:</strong> {modal.shift?.startDate && modal.shift?.endDate ? `${format(modal.shift.startDate, "HH:mm")} - ${format(modal.shift.endDate, "HH:mm")}` : "N/A"}</div>
+                <div><strong>Status:</strong> {modal.shift?.job_status || "Pending"}</div>
+              </div>
+            </div>
+            <div className="vr-modal-footer">
+              <button className="vr-btn-cancel" onClick={closeModal} disabled={saveLoading}>Cancel</button>
+              <button
+                className="vr-btn-confirm"
+                style={{ backgroundColor: "#ef4444", borderColor: "#ef4444" }}
+                onClick={handleSave}
+                disabled={saveLoading}
+              >
+                {saveLoading ? "Deleting..." : "Yes, Delete Job"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal?.type === "admin_assign" && (
+        <div className="vr-modal-backdrop" onClick={closeModal}>
+          <div className="vr-modal-container" onClick={(e) => e.stopPropagation()}>
+            <div className="vr-modal-header">
+              <h3>Assign Staff</h3>
+              <button onClick={closeModal}><i className="fa fa-times"></i></button>
+            </div>
+            <div className="vr-modal-content">
+              <div className="vr-modal-summary">
+                <div><strong>Site:</strong> {modal.site.displayName}</div>
+                <div><strong>Date:</strong> {modal.dateStr}</div>
+                <div><strong>Job:</strong> {format(modal.shift.startDate, "HH:mm")} - {format(modal.shift.endDate, "HH:mm")}</div>
+              </div>
+              <div className="vr-input-group">
+                <label>Select Staff Member</label>
+                <Select
+                  options={guardOptions}
+                  isLoading={contractorGuardsLoading}
+                  value={guardOptions.find((opt) => opt.value === selectedUserId) || null}
+                  onChange={(selectedOption) =>
+                    setSelectedUserId(selectedOption ? selectedOption.value : "")
+                  }
+                  placeholder={contractorGuardsLoading ? "Loading staff..." : "Search or select a staff..."}
+                  isClearable
+                  isSearchable
+                  menuPortalTarget={document.body}
+                  styles={selectStyles}
+                  className="react-select-container"
+                  classNamePrefix="react-select"
+                />
+              </div>
+            </div>
+            <div className="vr-modal-footer">
+              <button className="vr-btn-cancel" onClick={closeModal}>Cancel</button>
+              <button
+                className="vr-btn-confirm"
+                onClick={handleSave}
+                disabled={saveLoading}
+              >
+                {saveLoading ? "Saving..." : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal?.type === "remove_accepted" && (
+        <div className="vr-modal-backdrop" onClick={closeModal}>
+          <div className="vr-modal-container" onClick={(e) => e.stopPropagation()}>
+            <div className="vr-modal-header">
+              <h3>Remove from Job</h3>
+              <button onClick={closeModal}><i className="fa fa-times"></i></button>
+            </div>
+            <div className="vr-modal-content">
+              <div className="vr-modal-summary" style={{ marginBottom: "15px" }}>
+                <div><strong>Site:</strong> {modal.site.displayName}</div>
+                <div><strong>Date:</strong> {modal.dateStr}</div>
+                <div><strong>Job:</strong> {format(modal.shift.startDate, "HH:mm")} - {format(modal.shift.endDate, "HH:mm")}</div>
+              </div>
+              <p className="mb-2">
+                {userRole === "contractor" 
+                  ? "Are you sure you'd like to withdraw yourself from this job? This action cannot be undone."
+                  : "Are you sure you want to remove the Resource Partner from this job? This action cannot be undone."}
+              </p>
+              <div className="vr-input-group mt-3">
+                <label>Reason for removal <span className="text-danger">*</span></label>
+                <textarea 
+                  className="form-control" 
+                  rows="3" 
+                  placeholder={userRole === "contractor" ? "Please specify why you are withdrawing from this job..." : "Please specify the reason for removal..."}
+                  value={removeReason} 
+                  onChange={(e) => setRemoveReason(e.target.value)}
+                ></textarea>
+              </div>
+            </div>
+            <div className="vr-modal-footer">
+              <button className="vr-btn-cancel" onClick={closeModal}>Cancel</button>
+              <button
+                className="vr-btn-confirm"
+                style={{ backgroundColor: "#ef4444", borderColor: "#ef4444" }}
+                onClick={handleSave}
+                disabled={saveLoading}
+              >
+                {saveLoading ? "Removing..." : "Remove"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal?.type === "add_shift" && userRole !== "contractor" && (
+        <div className="embedded-job-backdrop" onClick={closeModal}>
+          <div className="embedded-job-shell" onClick={(e) => e.stopPropagation()}>
+            <AddJob
+              modalMode="embedded"
+              onClose={closeModal}
+              initialSite={modal.site?.siteData || modal.site}
+              initialDate={modal.dateKey || modal.dateStr}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

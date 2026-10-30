@@ -1,0 +1,2092 @@
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
+import { useSelector, useDispatch } from "react-redux";
+import { setUser } from "../store/slices/authSlice";
+import { toast } from "react-toastify";
+import useFetch from "../hooks/useFetch";
+import useSubmit from "../hooks/useSubmit";
+import Loader from "../components/Loader";
+import SignaturePad from "../components/contracts/SignaturePad";
+import { apiURL, resolveSignatureUrl } from "../utils/exports";
+const STATE_NAME_MAP = {
+  NSW: "New South Wales", VIC: "Victoria", QLD: "Queensland",
+  WA: "Western Australia", SA: "South Australia", TAS: "Tasmania",
+  ACT: "Australian Capital Territory", NT: "Northern Territory",
+  nsw: "New South Wales", vic: "Victoria", qld: "Queensland",
+  wa: "Western Australia", sa: "South Australia", tas: "Tasmania",
+  act: "Australian Capital Territory", nt: "Northern Territory",
+};
+
+const getStateLabel = (s) => {
+  if (!s) return "";
+  const key = String(s).trim();
+  return (
+    STATE_NAME_MAP[key] ||
+    STATE_NAME_MAP[key.toUpperCase()] ||
+    STATE_NAME_MAP[key.toLowerCase()] ||
+    key.toUpperCase()
+  );
+};
+
+const normalizeState = (s) => {
+  if (!s) return "";
+  const str = String(s).trim().toLowerCase();
+  for (const [key, name] of Object.entries(STATE_NAME_MAP)) {
+    if (key.toLowerCase() === str || name.toLowerCase() === str) {
+      return key.toLowerCase();
+    }
+  }
+  return str;
+};
+
+const hasExistingRateForState = (stateVal, rowsArray) => {
+  if (!stateVal || !Array.isArray(rowsArray)) return false;
+  const normTarget = normalizeState(stateVal);
+  return rowsArray.some((r) => normalizeState(r?.state) === normTarget);
+};
+
+
+const SLOT_ROWS = [
+  { label: "Mon–Fri Day", sub: "06:00–18:00", metro: "metro_mon_to_fri_day_rate", reg: "reg_mon_to_fri_day_rate" },
+  { label: "Mon–Fri Night", sub: "18:00–06:00", metro: "metro_mon_to_fri_night_rate", reg: "reg_mon_to_fri_night_rate" },
+  { label: "Saturday", sub: "", metro: "metro_sat_day_rate", reg: "reg_sat_day_rate" },
+  { label: "Sunday", sub: "", metro: "metro_sun_day_rate", reg: "reg_sun_day_rate" },
+  { label: "Public Holiday", sub: "", metro: "metro_pub_holi_day_rate", reg: "reg_pub_holi_day_rate" },
+];
+
+const fmt = (v) => `$${Number(v || 0).toFixed(2)}`;
+
+const makeBlankForm = (states = []) => {
+  const f = {};
+  states.forEach(s => {
+    f[s] = {};
+    SLOT_ROWS.forEach((row) => {
+      f[s][`def_${row.metro}`] = "";
+      f[s][`def_${row.reg}`] = "";
+    });
+  });
+  f.reason = "";
+  return f;
+};
+
+const normalizeValue = (val) => {
+  if (val === null || val === undefined) return "";
+  const str = String(val).trim();
+  if (str === "") return "";
+  const num = Number(str);
+  if (!isNaN(num)) return num;
+  return str;
+};
+
+const checkIfFormChanged = (currentForm, initialForm, states) => {
+  if (!currentForm || !initialForm) return false;
+
+  if (normalizeValue(currentForm.reason) !== normalizeValue(initialForm.reason)) {
+    return true;
+  }
+
+  for (const s of (states || [])) {
+    const currentTab = currentForm[s] || {};
+    const initialTab = initialForm[s] || {};
+
+    for (const row of SLOT_ROWS) {
+      const mk = `def_${row.metro}`;
+      const rk = `def_${row.reg}`;
+
+      if (normalizeValue(currentTab[mk]) !== normalizeValue(initialTab[mk])) {
+        return true;
+      }
+      if (normalizeValue(currentTab[rk]) !== normalizeValue(initialTab[rk])) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
+const ContractorRatesView = ({
+  selectedStates = [],
+  contractorId = null,
+  readOnly = false,
+  onRatesUpdated,
+  onSuccess,
+}) => {
+  const dispatch = useDispatch();
+  const { userdata, token } = useSelector((state) => state.auth || {});
+  const userId = userdata?.data?.id || userdata?.id;
+  const userType = userdata?.data?.user_type || userdata?.user_type;
+
+  const targetContractorId = contractorId || userId;
+
+  const endpoint = useMemo(
+    () => (targetContractorId ? `api/get-contractor-rates/${targetContractorId}` : null),
+    [targetContractorId]
+  );
+
+  const { data, loading, error, refetch: refetchActiveRates } = useFetch(endpoint, {
+    isAuth: true,
+    immediate: !!endpoint,
+  });
+
+  const { submit } = useSubmit({ isAuth: true });
+
+  const [isSavingAndExiting, setIsSavingAndExiting] = useState(false);
+  const [isSavingAndSubmitting, setIsSavingAndSubmitting] = useState(false);
+
+  const parsedSelectedStates = useMemo(() => {
+    if (!selectedStates) return [];
+    if (Array.isArray(selectedStates)) return selectedStates;
+    try {
+      const parsed = typeof selectedStates === "string" ? JSON.parse(selectedStates) : selectedStates;
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      return [];
+    }
+  }, [selectedStates]);
+
+  const [activeView, setActiveView] = useState(() => parsedSelectedStates?.[0] || null);
+
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [modalMode, setModalMode] = useState("update"); // "add" or "update"
+  const [viewRequestRates, setViewRequestRates] = useState(null);
+  const [activeStateTab, setActiveStateTab] = useState(null);
+  const [modalStates, setModalStates] = useState([]);
+  const [referenceRates, setReferenceRates] = useState({});
+  const [requestForm, setRequestForm] = useState(() => makeBlankForm(parsedSelectedStates));
+  const [initialFormState, setInitialFormState] = useState(null);
+  const [editingRequestId, setEditingRequestId] = useState(null);
+  const [formErrors, setFormErrors] = useState({});
+
+  // ── Digital Acknowledgement & Signature States ──
+  const [modalStep, setModalStep] = useState("rates"); // "rates" | "sign"
+  const [signatureName, setSignatureName] = useState("");
+  const [signatureImage, setSignatureImage] = useState("");
+  const [hasSignature, setHasSignature] = useState(false);
+  const [sigMode, setSigMode] = useState("draw"); // "draw" | "auto"
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [sigErrors, setSigErrors] = useState({});
+  const sigPadRef = useRef(null);
+
+  const resetSignatureState = useCallback(() => {
+    setModalStep("rates");
+    const defaultName = userdata?.data?.name || userdata?.name || "";
+    setSignatureName(defaultName);
+    setSignatureImage("");
+    setHasSignature(false);
+    setSigMode("draw");
+    setAgreeTerms(false);
+    setSigErrors({});
+  }, [userdata]);
+
+  const hasFormChanged = useMemo(
+    () => checkIfFormChanged(requestForm, initialFormState, modalStates),
+    [requestForm, initialFormState, modalStates]
+  );
+
+  const [mainTab, setMainTab] = useState("active");
+
+  const historyEndpoint = useMemo(
+    () => (targetContractorId ? `api/charge-rate-requests?user_id=${targetContractorId}` : null),
+    [targetContractorId]
+  );
+
+  const {
+    data: requestsData,
+    loading: requestsLoading,
+    refetch: refetchRequests
+  } = useFetch(historyEndpoint, {
+    isAuth: true,
+    immediate: !!historyEndpoint,
+  });
+
+  const rateRequests = useMemo(() => {
+    if (!requestsData) return [];
+    const arr = requestsData?.data ?? requestsData;
+    const reqs = Array.isArray(arr) ? arr : [];
+    const filtered = !targetContractorId ? reqs : reqs.filter(r => 
+      String(r.user_id) === String(targetContractorId) || 
+      String(r.contractor_id) === String(targetContractorId) ||
+      String(r.user?.id) === String(targetContractorId) ||
+      (!r.user_id && !r.contractor_id)
+    );
+    return [...filtered].sort((a, b) => {
+      const timeA = Math.max(
+        new Date(a.reviewed_at || 0).getTime(),
+        new Date(a.updated_at || 0).getTime(),
+        new Date(a.created_at || 0).getTime()
+      );
+      const timeB = Math.max(
+        new Date(b.reviewed_at || 0).getTime(),
+        new Date(b.updated_at || 0).getTime(),
+        new Date(b.created_at || 0).getTime()
+      );
+      return timeB - timeA;
+    });
+  }, [requestsData, targetContractorId]);
+
+  const rows = useMemo(() => {
+    if (!data) return [];
+    return Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+  }, [data]);
+
+  const displayStates = useMemo(() => {
+    const map = new Map();
+    parsedSelectedStates.forEach((s) => {
+      if (s) map.set(normalizeState(s), s);
+    });
+    rows.forEach((r) => {
+      if (r?.state && !map.has(normalizeState(r.state))) {
+        map.set(normalizeState(r.state), r.state);
+      }
+    });
+    return Array.from(map.values());
+  }, [parsedSelectedStates, rows]);
+
+  const missingStates = useMemo(() => {
+    return parsedSelectedStates.filter(
+      (s) => !rows.some((r) => normalizeState(r.state) === normalizeState(s))
+    );
+  }, [parsedSelectedStates, rows]);
+
+  useEffect(() => {
+    if (displayStates.length > 0) {
+      if (!activeView || !displayStates.some(s => normalizeState(s) === normalizeState(activeView))) {
+        setActiveView(displayStates[0]);
+      }
+    } else {
+      setActiveView(null);
+    }
+  }, [displayStates, activeView]);
+
+  useEffect(() => {
+    if (showRequestModal || viewRequestRates) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [showRequestModal, viewRequestRates]);
+
+  const rate = useMemo(
+    () => rows.find((r) => normalizeState(r.state) === normalizeState(activeView)),
+    [rows, activeView]
+  );
+
+  // ── Open Add Rate Modal (Sequential flow for missing states) ─────────────
+  const openAddRateFlow = (initialState = null, customStatesList = null) => {
+    let targetStates = [];
+    if (customStatesList && customStatesList.length > 0) {
+      targetStates = customStatesList.filter((s) => !hasExistingRateForState(s, rows));
+    } else {
+      targetStates = selectedStates.filter((s) => !hasExistingRateForState(s, rows));
+    }
+
+    if (targetStates.length === 0) {
+      toast.info("All selected states already have rates assigned.");
+      return;
+    }
+
+    if (initialState) {
+      const matchIndex = targetStates.findIndex(
+        (s) => normalizeState(s) === normalizeState(initialState)
+      );
+      if (matchIndex > 0) {
+        const item = targetStates.splice(matchIndex, 1)[0];
+        targetStates.unshift(item);
+      }
+    }
+
+    const f = makeBlankForm(targetStates);
+    f.reason = "";
+
+    setModalMode("add");
+    setReferenceRates({});
+    setEditingRequestId(null);
+    setRequestForm(f);
+    setInitialFormState(JSON.parse(JSON.stringify(f)));
+    setModalStates(targetStates);
+    setActiveStateTab(targetStates[0] || null);
+    setFormErrors({});
+    setIsSavingAndExiting(false);
+    setIsSavingAndSubmitting(false);
+    resetSignatureState();
+    setShowRequestModal(true);
+  };
+
+  // ── Open Request Rate Update Modal (Single state update flow) ───────────
+  const openUpdateRequestFlow = (targetState) => {
+    if (!targetState) return;
+
+    const targetStates = [targetState];
+    const f = makeBlankForm(targetStates);
+
+    const existingRate = rows.find(
+      (r) => normalizeState(r.state) === normalizeState(targetState)
+    );
+    if (existingRate) {
+      SLOT_ROWS.forEach((row) => {
+        const mk = `def_${row.metro}`;
+        const rk = `def_${row.reg}`;
+        const mVal = existingRate[mk] ?? existingRate[row.metro];
+        const rVal = existingRate[rk] ?? existingRate[row.reg];
+        if (mVal !== undefined && mVal !== null) {
+          f[targetState][mk] = mVal;
+        }
+        if (rVal !== undefined && rVal !== null) {
+          f[targetState][rk] = rVal;
+        }
+      });
+    }
+
+    let existingNotes = "";
+    const existingReq = rateRequests.find(
+      (r) => normalizeState(r.state) === normalizeState(targetState)
+    );
+    existingNotes =
+      existingReq?.notes ||
+      existingReq?.reason ||
+      existingReq?.note ||
+      existingRate?.notes ||
+      existingRate?.reason ||
+      existingRate?.note ||
+      "";
+    f.reason = existingNotes;
+
+    const refs = {};
+    if (existingRate) refs[targetState] = existingRate;
+
+    setModalMode("update");
+    setReferenceRates(refs);
+    setEditingRequestId(null);
+    setRequestForm(f);
+    setInitialFormState(JSON.parse(JSON.stringify(f)));
+    setModalStates(targetStates);
+    setActiveStateTab(targetState);
+    setFormErrors({});
+    setIsSavingAndExiting(false);
+    setIsSavingAndSubmitting(false);
+    resetSignatureState();
+    setShowRequestModal(true);
+  };
+
+  const handleRequestFormChange = (e) => {
+    const { id, value } = e.target;
+    if (id === "reason") {
+      setRequestForm((prev) => ({ ...prev, reason: value }));
+    } else {
+      setRequestForm((prev) => ({
+        ...prev,
+        [activeStateTab]: {
+          ...prev[activeStateTab],
+          [id]: value
+        }
+      }));
+      if (formErrors[activeStateTab]?.[id]) {
+        setFormErrors((prev) => {
+          const next = { ...prev };
+          if (next[activeStateTab]) {
+            next[activeStateTab] = { ...next[activeStateTab] };
+            delete next[activeStateTab][id];
+          }
+          return next;
+        });
+      }
+    }
+  };
+
+  // ── Apply All (Copies current state slot rates to all other states in Add Rate flow) ──
+  const handleApplyAll = () => {
+    if (!activeStateTab) return;
+    const currentRates = requestForm[activeStateTab] || {};
+    setRequestForm((prev) => {
+      const next = { ...prev };
+      modalStates.forEach((s) => {
+        if (s !== activeStateTab) {
+          next[s] = { ...currentRates };
+        }
+      });
+      return next;
+    });
+    toast.success("Rates applied to all other states!");
+  };
+
+  const validateStateTab = (stateVal) => {
+    let isValid = true;
+    const errors = {};
+    const stateForm = requestForm[stateVal] || {};
+    SLOT_ROWS.forEach(row => {
+      const mk = `def_${row.metro}`;
+      const rk = `def_${row.reg}`;
+      if (stateForm[mk] === "" || stateForm[mk] === undefined || stateForm[mk] === null) {
+        errors[mk] = true;
+        isValid = false;
+      }
+      if (stateForm[rk] === "" || stateForm[rk] === undefined || stateForm[rk] === null) {
+        errors[rk] = true;
+        isValid = false;
+      }
+    });
+    if (!isValid) {
+      setFormErrors(prev => ({ ...prev, [stateVal]: errors }));
+    } else {
+      setFormErrors(prev => {
+        const next = { ...prev };
+        delete next[stateVal];
+        return next;
+      });
+    }
+    return isValid;
+  };
+
+  const handleNextState = () => {
+    if (validateStateTab(activeStateTab)) {
+      const currentIndex = modalStates.indexOf(activeStateTab);
+      if (currentIndex < modalStates.length - 1) {
+        setActiveStateTab(modalStates[currentIndex + 1]);
+      }
+    } else {
+      toast.error("Please fill in all rate values before proceeding.");
+    }
+  };
+
+  // ── Proceed from Rates Editing to Signature & Agreement ───────────────
+  const handleProceedToSign = (e) => {
+    if (e) e.preventDefault();
+
+    let allValid = true;
+    let firstInvalidState = null;
+    modalStates.forEach((s) => {
+      if (!validateStateTab(s)) {
+        allValid = false;
+        if (!firstInvalidState) firstInvalidState = s;
+      }
+    });
+
+    if (!allValid) {
+      toast.error("Please fill in all missing rate values before proceeding to sign.");
+      if (firstInvalidState) setActiveStateTab(firstInvalidState);
+      return;
+    }
+
+    if (!signatureName.trim()) {
+      const defaultName = userdata?.data?.name || userdata?.name || "";
+      if (defaultName) setSignatureName(defaultName);
+    }
+
+    setSigErrors({});
+    setModalStep("sign");
+  };
+
+  const handleRequestSubmit = async (e, isSubmitted = 0) => {
+    if (e && typeof e.preventDefault === "function") e.preventDefault();
+    if (isSavingAndExiting || isSavingAndSubmitting) return;
+
+    if (modalStates.length === 0) {
+      toast.error("No valid state selected for rates submission.");
+      return;
+    }
+
+    // If triggered by Enter on input while not on last tab, treat as "Next" action
+    const isLastTab = modalStates.indexOf(activeStateTab) === modalStates.length - 1;
+    if (e && e.type === "keydown" && e.key === "Enter" && !isLastTab && modalStep === "rates") {
+      handleNextState();
+      return;
+    }
+
+    const isSaveAndExit = isSubmitted === 0;
+
+    // Validate Signature and Agreement if submitting for Admin Review
+    if (!isSaveAndExit) {
+      const errors = {};
+      const currentSigName = (signatureName || "").trim();
+      if (!currentSigName) {
+        errors.signatureName = "Please enter your full legal name.";
+      }
+
+      const currentSigData = sigPadRef.current?.toDataURL() || signatureImage;
+      const isSigEmpty = sigPadRef.current?.isEmpty ? sigPadRef.current.isEmpty() : !hasSignature;
+
+      if (isSigEmpty || !currentSigData) {
+        errors.signature = "Please provide your digital signature by drawing or auto-generating.";
+      }
+
+      if (!agreeTerms) {
+        errors.agreeTerms = "Please agree to the Resource Partner Terms & Conditions.";
+      }
+
+      if (Object.keys(errors).length > 0) {
+        setSigErrors(errors);
+        if (errors.agreeTerms) {
+          toast.error(errors.agreeTerms);
+        } else if (errors.signatureName) {
+          toast.error(errors.signatureName);
+        } else {
+          toast.error("Please provide your digital signature to proceed.");
+        }
+        return;
+      }
+
+      setIsSavingAndSubmitting(true);
+    } else {
+      setIsSavingAndExiting(true);
+    }
+
+    try {
+      let allValid = true;
+      let firstInvalidState = null;
+      modalStates.forEach(s => {
+        if (!validateStateTab(s)) {
+          allValid = false;
+          if (!firstInvalidState) firstInvalidState = s;
+        }
+      });
+
+      if (!allValid) {
+        toast.error("Please fill in all missing rate values before submitting.");
+        setActiveStateTab(firstInvalidState);
+        setModalStep("rates");
+        return;
+      }
+
+      const ratesPayload = [];
+      const currentSigData = !isSaveAndExit ? (sigPadRef.current?.toDataURL() || signatureImage) : "";
+      const currentSigName = !isSaveAndExit ? (signatureName || "").trim() : "";
+      const nowIso = new Date().toISOString();
+
+      for (const stateVal of modalStates) {
+        const stateForm = requestForm[stateVal] || {};
+        const originalRate = referenceRates[stateVal] || {};
+
+        let stateObj = {
+          title: `${getStateLabel(stateVal)} My Charge Rates`,
+          state: stateVal,
+          is_submitted: isSubmitted,
+          user_id: userId,
+          contractor_id: userId,
+        };
+
+        if (requestForm.reason) {
+          stateObj.notes = requestForm.reason;
+          stateObj.reason = requestForm.reason;
+        }
+
+        // Attach digital acknowledgement and signature to each rate item
+        if (!isSaveAndExit) {
+          stateObj.signature_name = currentSigName;
+          stateObj.signature_image = currentSigData;
+          stateObj.signature = currentSigData;
+          stateObj.is_acknowledged = 1;
+          stateObj.acknowledged_at = nowIso;
+          stateObj.signed_at = nowIso;
+          stateObj.agree_terms = 1;
+        }
+
+        // Set request id ONLY when editing an existing draft request (from History)
+        if (editingRequestId) {
+          stateObj.id = editingRequestId;
+          if (originalRate.id !== undefined && originalRate.id !== null) {
+            stateObj.charge_rate_request_id = originalRate.id;
+          }
+        }
+
+        // Preserve existing active rate identifier for rate update requests
+        const activeRateId = originalRate.contractor_rate_id || originalRate.rate_id || (!editingRequestId ? originalRate.id : null);
+        if (activeRateId !== undefined && activeRateId !== null) {
+          stateObj.contractor_rate_id = activeRateId;
+          stateObj.rate_id = activeRateId;
+        }
+        if (originalRate.charge_rate_request_id !== undefined && originalRate.charge_rate_request_id !== null) {
+          stateObj.charge_rate_request_id = originalRate.charge_rate_request_id;
+        }
+        if (originalRate.state_id !== undefined && originalRate.state_id !== null) {
+          stateObj.state_id = originalRate.state_id;
+        }
+
+        SLOT_ROWS.forEach((row) => {
+          const mk = `def_${row.metro}`;
+          const rk = `def_${row.reg}`;
+          const metroNight = row.metro.replace("_day_", "_night_");
+          const regNight = row.reg.replace("_day_", "_night_");
+
+          const mNightKey = `def_${metroNight}`;
+          const rNightKey = `def_${regNight}`;
+
+          const keysToCheck = [mk, rk];
+
+          // Only auto-mirror for weekend/public holidays (exclude mon_to_fri_day)
+          const shouldMirror = metroNight !== row.metro && !row.metro.includes("mon_to_fri");
+          if (shouldMirror) {
+            keysToCheck.push(mNightKey, rNightKey);
+          }
+
+          let computed = {};
+          computed[mk] = stateForm[mk] !== "" && stateForm[mk] !== undefined && stateForm[mk] !== null ? Number(stateForm[mk]) : undefined;
+          computed[rk] = stateForm[rk] !== "" && stateForm[rk] !== undefined && stateForm[rk] !== null ? Number(stateForm[rk]) : undefined;
+
+          if (shouldMirror) {
+            computed[mNightKey] = computed[mk];
+            computed[rNightKey] = computed[rk];
+          }
+
+          for (const key of keysToCheck) {
+            const cleanKey = key.replace(/^def_/, "");
+            const originalVal = originalRate[key] ?? originalRate[cleanKey] ?? 0;
+            const newVal = computed[key] !== undefined ? computed[key] : Number(originalVal || 0);
+
+            stateObj[key] = newVal;
+            stateObj[cleanKey] = newVal;
+          }
+        });
+
+        ratesPayload.push(stateObj);
+      }
+
+      const finalPayload = {
+        user_id: userId,
+        contractor_id: userId,
+        rates: ratesPayload,
+        is_submitted: isSubmitted,
+        notes: requestForm.reason || "",
+        reason: requestForm.reason || "",
+      };
+
+      // Attach digital acknowledgement and signature to root payload
+      if (!isSaveAndExit) {
+        finalPayload.signature_name = currentSigName;
+        finalPayload.signature_image = currentSigData;
+        finalPayload.signature = currentSigData;
+        finalPayload.is_acknowledged = 1;
+        finalPayload.acknowledged_at = nowIso;
+        finalPayload.signed_at = nowIso;
+        finalPayload.agree_terms = 1;
+      }
+
+      if (editingRequestId) {
+        finalPayload.id = editingRequestId;
+        finalPayload.charge_rate_request_id = editingRequestId;
+      }
+
+      const res = await submit("api/request-charge-rate", finalPayload, { method: "POST" });
+      const isSuccess = res && (
+        res.success === true ||
+        res.code === 200 ||
+        res.status === 200 ||
+        res.status === "success" ||
+        res?.data ||
+        res?.message ||
+        res?.charge_rate_request_id ||
+        res?.data?.charge_rate_request_id
+      );
+
+      if (isSuccess && !res?.error) {
+        toast.success(
+          res.message ||
+            (isSubmitted === 1
+              ? "Rate request acknowledged, signed & submitted for Admin review!"
+              : "Rate update saved successfully!")
+        );
+        setShowRequestModal(false);
+        resetSignatureState();
+        setEditingRequestId(null);
+        setRequestForm(makeBlankForm(selectedStates));
+        setInitialFormState(null);
+        if (typeof refetchRequests === "function") refetchRequests();
+        if (typeof refetchActiveRates === "function") refetchActiveRates();
+        if (typeof onRatesUpdated === "function") onRatesUpdated();
+        if (typeof onSuccess === "function") onSuccess();
+
+        // Fetch latest user profile to sync active status and details into Redux immediately
+        const syncUserId = targetContractorId || userId;
+        if (syncUserId && token) {
+          try {
+            const userRes = await fetch(`${apiURL}api/user-edit/${syncUserId}`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/json",
+              },
+            });
+            if (userRes.ok) {
+              const userData = await userRes.json();
+              if (userData && (userData.success || userData.data)) {
+                dispatch(setUser({ userdata: userData }));
+              }
+            }
+          } catch (e) {
+            console.error("Failed to sync updated user profile after rate update:", e);
+          }
+        }
+      } else {
+        toast.error(res?.message || res?.error || "Failed to save rate update requests.");
+        console.error(res?.message || res?.error || "Failed to save rate update requests.");
+      }
+    } catch (err) {
+      console.error(err?.message || "Failed to save rate update request.");
+    } finally {
+      if (isSaveAndExit) {
+        setIsSavingAndExiting(false);
+      } else {
+        setIsSavingAndSubmitting(false);
+      }
+    }
+  };
+
+  const handleResubmit = (req) => {
+    const s = parsedSelectedStates.find(st => st.toLowerCase() === (req.state || "").toLowerCase()) || req.state;
+    const form = makeBlankForm([s]);
+
+    if (form[s]) {
+      SLOT_ROWS.forEach(row => {
+        const mk = `def_${row.metro}`;
+        const rk = `def_${row.reg}`;
+        const mVal = req[mk] ?? req[row.metro];
+        const rVal = req[rk] ?? req[row.reg];
+        if (mVal !== undefined && mVal !== null) form[s][mk] = mVal;
+        if (rVal !== undefined && rVal !== null) form[s][rk] = rVal;
+      });
+    }
+
+    const noteReason = req.notes || req.reason || req.review_note || req.note || req.admin_notes || "";
+    form.reason = noteReason;
+
+    setRequestForm(form);
+    setInitialFormState(JSON.parse(JSON.stringify(form)));
+
+    setReferenceRates({ [s]: req });
+    setEditingRequestId(req.id || req.charge_rate_request_id || req.rate_id || null);
+
+    setModalStates([s]);
+    setActiveStateTab(s);
+    setFormErrors({});
+    setViewRequestRates(null);
+    setIsSavingAndExiting(false);
+    setIsSavingAndSubmitting(false);
+    resetSignatureState();
+    setShowRequestModal(true);
+  };
+
+  // ── Guards ───────────────────────────────────────────────────────────────
+  if (!readOnly && !contractorId && userType !== "contractor") {
+    return (
+      <div className="d-flex align-items-center justify-content-center bg-light fade-in" style={{ minHeight: "100vh" }}>
+        <div className="text-center p-5 bg-white rounded-4 shadow-sm border" style={{ maxWidth: "400px" }}>
+          <div className="mb-3"><i className="fa fa-lock text-danger" style={{ fontSize: "2.5rem" }}></i></div>
+          <h3 className="text-dark fw-bold mb-2">Access Denied</h3>
+          <p className="text-muted mb-0">This portal is restricted to active Resource Partners only.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) return <Loader />;
+
+  if (error) {
+    const errMsg = typeof error === "string" ? error : error?.message || "We couldn't retrieve your rates at this time.";
+    return (
+      <div className="d-flex align-items-center justify-content-center bg-light fade-in" style={{ minHeight: readOnly ? "250px" : "100vh" }}>
+        <div className="text-center p-4 bg-white rounded-4 shadow-sm border" style={{ maxWidth: "450px" }}>
+          <div className="mb-3"><i className="fa fa-exclamation-triangle text-warning" style={{ fontSize: "2.5rem" }}></i></div>
+          <h4 className="fw-bold text-dark mb-2">Failed to load rates</h4>
+          <p className="text-muted text-break mb-4">{errMsg}</p>
+          <button type="button" className="btn btn-dark px-4 py-2 rounded-pill fw-bold" onClick={() => (readOnly ? refetchActiveRates() : window.location.reload())}>
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`fade-in ${readOnly ? "px-1 py-1" : "container-fluid p-3 p-md-4"}`} style={readOnly ? { minHeight: "auto" } : { minHeight: "100vh" }}>
+      <style>{`
+        :root {
+          --navy-950: #0a1930;
+          --navy-900: #0e2340;
+          --teal: #0A7C6E;
+          --teal-dark: #075e53;
+          --ink: #0f172a;
+          --muted: #64748b;
+          --faint: #94a3b8;
+          --line: #e2e8f0;
+          --line-soft: #f1f5f9;
+          --surface: #ffffff;
+        }
+
+        @keyframes slideUpFade {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in { animation: slideUpFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+        /* ── Hero ── */
+        .rates-hero {
+          position: relative;
+          background: linear-gradient(135deg, var(--navy-950) 0%, var(--navy-900) 65%, #0f2f52 100%);
+          border-radius: 22px;
+          padding: 34px 36px 40px;
+          overflow: hidden;
+          isolation: isolate;
+          margin-bottom: 1.5rem;
+          box-shadow: 0 12px 24px -10px rgba(10, 25, 48, 0.3);
+        }
+        .rates-hero::before {
+          content: "";
+          position: absolute; inset: 0;
+          background-image: radial-gradient(rgba(255,255,255,0.10) 1px, transparent 1px);
+          background-size: 22px 22px;
+          opacity: 0.35; z-index: -1;
+        }
+        .rates-hero::after {
+          content: "";
+          position: absolute; top: -60px; right: -60px;
+          width: 260px; height: 260px; border-radius: 50%;
+          background: radial-gradient(circle, rgba(10,124,110,0.45) 0%, rgba(10,124,110,0) 70%);
+          z-index: -1;
+        }
+        .rates-hero-eyebrow {
+          display: inline-flex; align-items: center; gap: 8px;
+          font-size: 11px; font-weight: 700; letter-spacing: 0.6px;
+          text-transform: uppercase; color: #6ee7d8; margin-bottom: 10px;
+        }
+        .rates-hero-eyebrow .dot {
+          width: 7px; height: 7px; border-radius: 50%;
+          background: #34d399;
+          box-shadow: 0 0 0 4px rgba(52,211,153,0.18);
+        }
+        .rates-hero h1 { color: #fff; font-size: 26px; font-weight: 800; letter-spacing: -0.4px; margin: 0 0 6px; }
+        .rates-hero p  { color: rgba(255,255,255,0.7); font-size: 14.5px; margin: 0; }
+
+        /* ── Rate picker ── */
+        .rate-picker {
+          display: flex; gap: 12px; overflow-x: auto;
+          padding: 4px 4px 12px 4px; margin-bottom: 1.5rem;
+          scrollbar-width: thin; scrollbar-color: var(--faint) transparent;
+          scroll-behavior: smooth;
+        }
+        .rate-picker::-webkit-scrollbar { height: 6px; }
+        .rate-picker::-webkit-scrollbar-thumb { background: var(--line); border-radius: 10px; }
+        .rate-pill {
+          flex: 0 0 auto; min-width: 220px; text-align: left;
+          background: var(--surface); border: 1.5px solid var(--line-soft);
+          border-radius: 16px; padding: 16px 18px; cursor: pointer;
+          transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+          position: relative; outline: none; user-select: none;
+        }
+        .rate-pill:hover:not(.active) { border-color: rgba(10,124,110,0.25); background: #f8fafc; box-shadow: 0 8px 16px -8px rgba(15,23,42,0.08); transform: translateY(-2px); }
+        .rate-pill:active { transform: scale(0.97) !important; }
+        .rate-pill.active { border-color: var(--teal); background: #f0fdf9; box-shadow: 0 8px 20px -8px rgba(10,124,110,0.3); transform: translateY(-2px); }
+        .rate-pill:focus-visible { box-shadow: 0 0 0 3px rgba(10,124,110,0.2); }
+        .rate-pill .pill-title { font-weight: 800; font-size: 14.5px; color: var(--ink); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rate-pill .pill-state { display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--teal-dark); background: rgba(10,124,110,0.08); padding: 3px 9px; border-radius: 20px; margin-bottom: 10px; }
+        .rate-pill.active::after { content: "\\2713"; position: absolute; top: 14px; right: 14px; width: 20px; height: 20px; border-radius: 50%; background: var(--teal); color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; font-weight: 700; box-shadow: 0 2px 6px rgba(10,124,110,0.3); }
+
+        /* ── Tabs ── */
+        .rate-tabs { display: inline-flex; background: #e2e8f0; border-radius: 12px; padding: 6px; gap: 6px; box-shadow: inset 0 2px 4px rgba(15,23,42,0.05); }
+        .rate-tab { position: relative; border: none; background: transparent; padding: 10px 24px; border-radius: 8px; font-weight: 700; font-size: 14px; color: var(--muted); transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; outline: none; user-select: none; }
+        .rate-tab:hover:not(.active) { color: var(--ink); background: rgba(255,255,255,0.4); }
+        .rate-tab:active { transform: scale(0.96); }
+        .rate-tab.active { background: var(--surface); color: var(--teal-dark); box-shadow: 0 4px 12px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.04); }
+
+        /* ── Rate card ── */
+        .rate-card { background: var(--surface); border-radius: 18px; border: 1px solid var(--line); box-shadow: 0 8px 24px -8px rgba(15,23,42,0.05); overflow: hidden; }
+        .rate-card-head { padding: 20px 24px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; background: #fafbfc; }
+        .rate-card-head .icon-badge { width: 40px; height: 40px; border-radius: 10px; background: rgba(10,124,110,0.08); color: var(--teal); display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }
+        .rate-card-head h6 { margin: 0 0 2px 0; font-weight: 800; color: var(--ink); font-size: 15.5px; }
+        .rate-card-head span { font-size: 13px; color: var(--muted); }
+        .rate-row { display: grid; grid-template-columns: 1.6fr 1fr 1fr; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--line-soft); transition: background 0.15s; }
+        .rate-row:last-child { border-bottom: none; }
+        .rate-row:hover { background: #f8fafc; }
+        .rate-row .slot-label { font-weight: 700; color: var(--ink); font-size: 14.5px; }
+        .rate-row .slot-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+        .rate-row .amount { font-weight: 800; font-size: 15.5px; color: var(--ink); }
+        .rate-row .amount-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--faint); margin-bottom: 4px; }
+        .rate-row .metro .amount { color: var(--teal-dark); }
+
+        /* ── Modal Overlay ── */
+        .modal-overlay-premium {
+          position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+          width: 100vw; height: 100vh;
+          background: rgba(4, 11, 28, 0.78);
+          backdrop-filter: blur(8px) saturate(1.6);
+          -webkit-backdrop-filter: blur(8px) saturate(1.6);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 999999 !important; padding: 20px;
+          animation: rr-overlay-in 0.22s ease-out;
+        }
+        @keyframes rr-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+
+        /* ── Modal Container ── */
+        .modal-content-premium {
+          background: #f4f6fa; border-radius: 22px;
+          box-shadow: 0 40px 80px -20px rgba(4,20,55,0.65), 0 0 0 1px rgba(255,255,255,0.08);
+          overflow: hidden; max-height: 94vh;
+          display: flex; flex-direction: column;
+          animation: rr-modal-in 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes rr-modal-in { from { opacity: 0; transform: scale(0.95) translateY(16px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
+        /* ── Modal Header ── */
+        .modal-header-premium {
+          background: linear-gradient(135deg, #040f28 0%, #071831 40%, #0b2a47 70%, #0a3d3a 100%);
+          position: relative; overflow: hidden; padding: 28px 32px 24px; flex-shrink: 0;
+        }
+        .modal-header-premium::before { content: ""; position: absolute; top: -60px; right: -60px; width: 200px; height: 200px; border-radius: 50%; background: radial-gradient(circle, rgba(10,180,150,0.28) 0%, transparent 65%); pointer-events: none; }
+        .modal-header-premium::after  { content: ""; position: absolute; bottom: -40px; left: 60px; width: 160px; height: 160px; border-radius: 50%; background: radial-gradient(circle, rgba(30,120,255,0.15) 0%, transparent 70%); pointer-events: none; }
+        .modal-header-icon { width: 46px; height: 46px; border-radius: 14px; background: linear-gradient(135deg, rgba(10,180,150,0.35), rgba(10,180,150,0.12)); border: 1px solid rgba(10,180,150,0.4); display: inline-flex; align-items: center; justify-content: center; font-size: 18px; color: #4ee8cc; margin-bottom: 14px; position: relative; z-index: 1; }
+        .modal-header-premium h5 { font-size: 21px; font-weight: 800; color: #fff; letter-spacing: -0.3px; margin-bottom: 6px; position: relative; z-index: 1; }
+        .modal-header-premium p  { font-size: 13.5px; color: rgba(255,255,255,0.52); margin: 0; position: relative; z-index: 1; }
+        .modal-close-btn { position: absolute; top: 22px; right: 26px; z-index: 10; width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.8); display: inline-flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer; transition: background 0.18s, border-color 0.18s, transform 0.2s; backdrop-filter: blur(4px); }
+        .modal-close-btn:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.28); transform: rotate(90deg) scale(1.08); }
+
+        /* ── Form fields inside modal ── */
+        .rr-form-section {
+          background: #fff; border: 1.5px solid #e4eaf3; border-radius: 14px;
+          padding: 20px 22px; margin-bottom: 20px;
+        }
+        .rr-section-title { font-size: 13px; font-weight: 800; color: #0a1e3a; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .rr-section-title i { color: #0A7C6E; }
+        
+        /* ── Tab Bar ── */
+        .rr-tab-bar { display: inline-flex; background: #e8edf4; border-radius: 12px; padding: 4px; gap: 4px; flex-wrap: wrap; }
+        .rr-tab-btn { padding: 9px 22px; border-radius: 9px; border: none; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s cubic-bezier(0.4,0,0.2,1); display: flex; align-items: center; gap: 7px; color: #6b7a99; background: transparent; }
+        .rr-tab-btn.active { background: #fff; color: #0a1e3a; box-shadow: 0 2px 10px rgba(10,30,58,0.12), 0 0 0 1px rgba(10,30,58,0.06); }
+        .rr-tab-btn.active i { color: #0A7C6E; }
+
+        /* ── Slot Cards ── */
+        .rr-slot-card { background: #fff; border: 1.5px solid #e4eaf3; border-radius: 14px; padding: 16px 16px 14px; transition: border-color 0.18s, box-shadow 0.18s, transform 0.15s; }
+        .rr-slot-card:hover { border-color: #b8d8e8; box-shadow: 0 6px 22px -6px rgba(10,70,120,0.1); transform: translateY(-1px); }
+        .rr-slot-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .rr-slot-name { font-size: 13px; font-weight: 800; color: #0a1e3a; letter-spacing: -0.1px; }
+        .rr-slot-time { font-size: 10px; font-weight: 600; color: #9bafc8; background: #f0f4fb; padding: 3px 8px; border-radius: 20px; }
+        .rr-input-group { display: flex; flex-direction: column; gap: 2px; }
+        .rr-input-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #9bafc8; margin-bottom: 4px; }
+        .rr-input-label.metro    { color: #0A7C6E; }
+        .rr-input-label.regional { color: #4a6fa5; }
+        .rr-input-wrap { display: flex; align-items: center; border: 1.5px solid #dce5f0; border-radius: 10px; overflow: hidden; transition: border-color 0.18s, box-shadow 0.18s; background: #f8fafd; }
+        .rr-input-wrap:focus-within { border-color: #0A7C6E; box-shadow: 0 0 0 3px rgba(10,124,110,0.12); background: #fff; }
+        .rr-input-wrap.regional:focus-within { border-color: #4a6fa5; box-shadow: 0 0 0 3px rgba(74,111,165,0.12); }
+        .rr-currency-sign { padding: 0 9px; font-size: 13px; font-weight: 800; color: #9bafc8; background: transparent; border-right: 1.5px solid #dce5f0; height: 36px; display: flex; align-items: center; }
+        .rr-input-wrap.metro    .rr-currency-sign { color: #0A7C6E; border-color: rgba(10,124,110,0.2); }
+        .rr-input-wrap.regional .rr-currency-sign { color: #4a6fa5; border-color: rgba(74,111,165,0.2); }
+        .rr-field { flex: 1; border: none; background: transparent; padding: 0 9px; font-size: 13.5px; font-weight: 700; color: #0a1e3a; height: 36px; outline: none; width: 0; }
+        .rr-field::-webkit-outer-spin-button,
+        .rr-field::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        .rr-field[type=number] {
+          -moz-appearance: textfield;
+          appearance: textfield;
+        }
+
+        .rr-input-wrap.has-error { border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.12); background: #fffaf9; }
+        .rr-input-wrap.has-error:focus-within { border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.25); background: #fff; }
+        .rr-input-wrap.has-error .rr-currency-sign { color: #ef4444; border-color: rgba(239,68,68,0.2); }
+
+        /* ── Reason & Footer ── */
+        .rr-reason-section { background: #fff; border: 1.5px solid #e4eaf3; border-radius: 14px; padding: 18px 20px; }
+        .rr-reason-label { font-size: 13px; font-weight: 700; color: #0a1e3a; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+        .rr-reason-label i { color: #0A7C6E; font-size: 13px; }
+        .rr-reason-label .optional { color: #9bafc8; font-weight: 500; font-size: 12px; }
+        .rr-reason-textarea { width: 100%; border: 1.5px solid #dce5f0; border-radius: 10px; padding: 12px 14px; font-size: 13.5px; color: #0a1e3a; background: #f8fafd; resize: vertical; min-height: 80px; outline: none; transition: border-color 0.18s, box-shadow 0.18s, background 0.18s; font-family: inherit; line-height: 1.6; }
+        .rr-reason-textarea:focus { border-color: #0A7C6E; box-shadow: 0 0 0 3px rgba(10,124,110,0.12); background: #fff; }
+        .rr-reason-textarea::placeholder { color: #b0c1d4; }
+        .rr-footer { background: #fff; border-top: 1.5px solid #e8edf4; padding: 18px 28px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+        .rr-footer-hint { font-size: 12px; color: #9bafc8; display: flex; align-items: center; gap: 6px; }
+        .rr-btn-cancel { padding: 10px 24px; border-radius: 30px; border: 1.5px solid #dce5f0; background: #fff; font-size: 13.5px; font-weight: 700; color: #4a6080; cursor: pointer; transition: all 0.18s; }
+        .rr-btn-cancel:hover { background: #f4f6fa; border-color: #c8d5e8; }
+        .rr-btn-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
+        .rr-btn-secondary { padding: 11px 24px; border-radius: 30px; border: 1.5px solid #0A7C6E; background: #fff; font-size: 13.5px; font-weight: 700; color: #0A7C6E; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; min-width: 150px; gap: 8px; transition: all 0.2s; }
+        .rr-btn-secondary:hover:not(:disabled) { background: #f0fdf9; box-shadow: 0 4px 14px rgba(10,124,110,0.15); transform: translateY(-1px); }
+        .rr-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .rr-btn-submit { padding: 11px 28px; border-radius: 30px; border: none; background: linear-gradient(135deg, #0A7C6E 0%, #0b9b8a 100%); font-size: 13.5px; font-weight: 700; color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; min-width: 170px; gap: 8px; box-shadow: 0 4px 16px rgba(10,124,110,0.35); transition: all 0.2s; }
+        .rr-btn-submit:hover:not(:disabled) { box-shadow: 0 6px 22px rgba(10,124,110,0.48); transform: translateY(-1px); }
+        .rr-btn-submit:disabled { opacity: 0.5; cursor: not-allowed !important; transform: none !important; box-shadow: none !important; }
+
+        /* ── Rate Agreement & Signature Step ── */
+        .rr-step-badge {
+          display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
+          background: rgba(10,180,150,0.15); border: 1px solid rgba(10,180,150,0.3);
+          border-radius: 999px; font-size: 11px; font-weight: 700; color: #4ee8cc;
+          text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+        }
+        .rr-agreement-box {
+          background: #f0fdf9; border: 1.5px solid #a7f3d0; border-radius: 14px;
+          padding: 18px 20px; margin-bottom: 20px;
+        }
+        .rr-agreement-box h6 {
+          font-size: 13.5px; font-weight: 800; color: #065f46; margin-bottom: 6px;
+          display: flex; align-items: center; gap: 8px;
+        }
+        .rr-agreement-box p {
+          font-size: 12.5px; color: #047857; margin: 0; line-height: 1.55;
+        }
+        .rr-summary-box {
+          background: #fff; border: 1.5px solid #e4eaf3; border-radius: 14px;
+          padding: 20px 22px; margin-bottom: 20px;
+        }
+        .rr-summary-title {
+          margin-bottom: 16px;
+          display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+        }
+        .rr-summary-header-icon {
+          width: 34px; height: 34px; border-radius: 10px;
+          background: #e6f6f4; color: #0A7C6E;
+          display: inline-flex; align-items: center; justify-content: center;
+          font-size: 15px; flex-shrink: 0;
+        }
+        .rr-summary-state-card {
+          background: #ffffff;
+          border: 1.5px solid #e2e8f0;
+          border-radius: 12px;
+          overflow: hidden;
+          box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+        }
+        .rr-summary-state-header {
+          padding: 11px 16px;
+          background: #f8fafc;
+          border-bottom: 1.5px solid #edf2f7;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .rr-summary-state-badge {
+          background: #e6f6f4;
+          color: #0A7C6E;
+          border: 1px solid rgba(10, 124, 110, 0.25);
+          font-weight: 700;
+          font-size: 11px;
+          padding: 3px 10px;
+        }
+        .rr-summary-table {
+          width: 100%;
+          margin: 0;
+        }
+        .rr-summary-table thead th {
+          background: #fdfdfe;
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.6px;
+          padding: 8px 16px;
+          border-bottom: 1.5px solid #edf2f7;
+        }
+        .rr-summary-table tbody tr {
+          border-bottom: 1px solid #f1f5f9;
+        }
+        .rr-summary-table tbody tr:last-child {
+          border-bottom: none;
+        }
+        .rr-summary-table tbody td {
+          padding: 9px 16px;
+        }
+        .rr-rate-tag {
+          display: inline-block;
+          font-weight: 700;
+          font-size: 12.5px;
+          padding: 3px 11px;
+          border-radius: 6px;
+          min-width: 72px;
+          text-align: center;
+        }
+        .rr-rate-tag.metro {
+          background: #e6f6f4;
+          color: #086358;
+          border: 1px solid #bceae2;
+        }
+        .rr-rate-tag.regional {
+          background: #eff6ff;
+          color: #1e40af;
+          border: 1px solid #bfdbfe;
+        }
+        .rr-sig-box {
+          background: #fff; border: 1.5px solid #e4eaf3; border-radius: 14px;
+          padding: 20px 22px; margin-bottom: 20px;
+        }
+        .rr-sig-title {
+          font-size: 13.5px; font-weight: 800; color: #0a1e3a; margin-bottom: 14px;
+          display: flex; align-items: center; gap: 8px;
+        }
+        .rr-sig-tabs {
+          display: inline-flex; background: #e8edf4; border-radius: 10px; padding: 3px; gap: 3px; margin-bottom: 14px;
+        }
+        .rr-sig-tab {
+          border: none; background: transparent; padding: 7px 16px; border-radius: 8px;
+          font-size: 12px; font-weight: 700; color: #6b7a99; cursor: pointer;
+          display: flex; align-items: center; gap: 6px; transition: all 0.15s;
+        }
+        .rr-sig-tab.active {
+          background: #fff; color: #0a1e3a; box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+        .rr-sig-tab.active i { color: #0A7C6E; }
+        .rr-name-input {
+          width: 100%; border: 1.5px solid #dce5f0; border-radius: 10px; padding: 10px 14px;
+          font-size: 13.5px; font-weight: 600; color: #0a1e3a; background: #f8fafd;
+          outline: none; transition: all 0.18s; font-family: inherit; margin-bottom: 16px;
+        }
+        .rr-name-input:focus {
+          border-color: #0A7C6E; background: #fff; box-shadow: 0 0 0 3px rgba(10,124,110,0.12);
+        }
+        .rr-name-input.has-error {
+          border-color: #ef4444; background: #fffaf9; box-shadow: 0 0 0 3px rgba(239,68,68,0.12);
+        }
+        .rr-terms-label {
+          display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: #334155;
+          cursor: pointer; user-select: none; margin-top: 14px; line-height: 1.5;
+        }
+        .rr-terms-label input[type="checkbox"] {
+          margin-top: 3px; width: 17px; height: 17px; accent-color: #0A7C6E; cursor: pointer; flex-shrink: 0;
+        }
+        .rr-sig-error {
+          font-size: 12px; font-weight: 600; color: #dc2626; margin-top: 6px;
+          display: flex; align-items: center; gap: 5px;
+        }
+
+        @media (max-width: 767.98px) {
+          .rates-hero { padding: 26px 20px 34px; border-radius: 18px; }
+          .rates-hero h1 { font-size: 22px; }
+          .rate-pill { min-width: 200px; }
+          .rate-row { grid-template-columns: 1fr 1fr; row-gap: 12px; }
+          .rate-row .slot-col { grid-column: 1 / -1; }
+          .rate-card-head { flex-direction: column; align-items: flex-start; }
+          .modal-overlay-premium { padding: 8px; }
+          .modal-content-premium { max-height: 97vh; }
+          .modal-header-premium { padding: 20px 20px 18px; }
+          .rr-footer { flex-direction: column; gap: 12px; }
+        }
+      `}</style>
+
+
+      {/* ── Main Tabs ── */}
+      <div className="d-flex justify-content-end mb-4">
+        <div className="rate-tabs">
+          {[
+            { key: "active", label: "Active Rates", icon: "fa-bolt" },
+            { key: "history", label: "Archived History", icon: "fa-history" }
+          ].map(tab => (
+            <button
+              key={tab.key}
+              type="button"
+              className={`rate-tab ${mainTab === tab.key ? "active" : ""}`}
+              onClick={() => {
+                setMainTab(tab.key);
+                if (tab.key === "history") refetchRequests();
+                if (tab.key === "active") refetchActiveRates();
+              }}
+            >
+              <i className={`fa ${tab.icon} me-2`}></i>{tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {mainTab === "active" && (
+        <>
+          {/* ── Rates View ── */}
+          {displayStates.length === 0 ? (
+            <div className="rate-card text-center py-5 fade-in">
+              <div className="mb-3">
+                <i className="fa fa-map text-muted" style={{ fontSize: "3rem" }}></i>
+              </div>
+              <h5 className="fw-bold text-dark mb-2">No States Selected</h5>
+              <p className="text-muted mx-auto mb-4" style={{ maxWidth: "400px" }}>
+                {readOnly
+                  ? "This contractor has not been assigned any states yet."
+                  : "You haven't selected any states in your profile. Please update your profile to request charge rates."}
+              </p>
+            </div>
+          ) : (
+            <div className="fade-in" style={{ animationDelay: "0.1s" }}>
+              {(() => {
+                return (
+                  <>
+                    {missingStates.length > 0 && (
+                      <div className="alert d-flex flex-column flex-md-row align-items-center justify-content-between mb-4 shadow-sm border-0" style={{ borderRadius: "14px", backgroundColor: "#fffbe6", color: "#856404", padding: "16px 20px" }}>
+                        <div className="d-flex align-items-center gap-3 mb-3 mb-md-0">
+                          <i className="fa fa-exclamation-triangle fs-4 text-warning"></i>
+                          <div>
+                            <strong>Rates Missing!</strong>
+                            <div className="small mt-1">Rates for <strong>{missingStates.map(s => getStateLabel(s)).join(", ")}</strong> are missing. {readOnly ? "Rates have not been added yet for these states." : "Please add rates to continue."}</div>
+                          </div>
+                        </div>
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            className="btn fw-bold px-4 py-2 shadow-sm"
+                            style={{ backgroundColor: "#ffc107", color: "#000", borderRadius: "8px", whiteSpace: "nowrap" }}
+                            onClick={() => openAddRateFlow(missingStates[0], missingStates)}
+                          >
+                            Add Rates
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {displayStates.length > 0 && (
+                      <div className="rate-tabs flex-wrap mb-4">
+                        {displayStates.map((stateVal) => {
+                          const isMissing = missingStates.some(ms => normalizeState(ms) === normalizeState(stateVal));
+                          return (
+                            <button
+                              key={stateVal}
+                              type="button"
+                              className={`rate-tab justify-content-center position-relative ${normalizeState(stateVal) === normalizeState(activeView) ? "active" : ""}`}
+                              style={isMissing && normalizeState(stateVal) !== normalizeState(activeView) ? { color: "#ef4444" } : {}}
+                              onClick={() => setActiveView(stateVal)}
+                              aria-label={`Select state: ${getStateLabel(stateVal)}`}
+                            >
+                              <i className="fa fa-map-marker-alt me-2"></i> {getStateLabel(stateVal)}
+                              {isMissing ? (
+                                <span 
+                                  className="badge rounded-pill bg-danger ms-2" 
+                                  style={{ fontSize: "0.65rem", padding: "0.3em 0.6em" }}
+                                >
+                                  Missing
+                                </span>
+                              ) : (
+                                <span 
+                                  className="badge rounded-pill ms-2" 
+                                  style={{ fontSize: "0.65rem", padding: "0.3em 0.6em", backgroundColor: "rgba(10, 124, 110, 0.15)", color: "#0A7C6E" }}
+                                >
+                                  Active
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {!rate ? (
+                      <div className="rate-card text-center py-5 fade-in mt-2">
+                        <div className="mb-3">
+                          <i className="fa fa-folder-open" style={{ fontSize: "3rem", color: "var(--line)" }}></i>
+                        </div>
+                        <h5 className="fw-bold text-dark mb-2">No Rates Assigned</h5>
+                        <p className="text-muted mx-auto mb-4" style={{ maxWidth: "400px" }}>
+                          {readOnly
+                            ? `No active rates have been submitted for ${getStateLabel(activeView)}.`
+                            : `You currently do not have any active rates assigned for ${getStateLabel(activeView)}. Please add your rates.`}
+                        </p>
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            className="btn text-white rounded-pill px-4 py-2 fw-bold shadow-sm d-inline-flex align-items-center gap-2"
+                            style={{ backgroundColor: "var(--teal)", border: "none" }}
+                            onClick={() => openAddRateFlow(activeView)}
+                          >
+                            <i className="fa-solid fa-plus"></i> Add Rate
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="rate-card mt-2 fade-in">
+                        <div className="rate-card-head d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3">
+                          <div className="d-flex align-items-center gap-3">
+                            <span className="icon-badge mb-0"><i className="fa fa-clock"></i></span>
+                            <div>
+                              <h6 className="mb-0">{readOnly ? `Rates for ${getStateLabel(activeView)}` : `My Rates for ${getStateLabel(activeView)}`}</h6>
+                            </div>
+                          </div>
+                          {!readOnly && (
+                            <button
+                              type="button"
+                              className="btn text-white rounded-pill px-4 py-2 fw-bold shadow-sm d-inline-flex align-items-center gap-2 mt-2 mt-md-0"
+                              style={{ backgroundColor: "var(--teal)", border: "none" }}
+                              onClick={() => openUpdateRequestFlow(activeView)}
+                            >
+                              <i className="fa-solid fa-paper-plane"></i> Request Rate Update
+                            </button>
+                          )}
+                        </div>
+                        {SLOT_ROWS.map((row) => {
+                          const metroVal = rate ? rate[`def_${row.metro}`] : 0;
+                          const regVal = rate ? rate[`def_${row.reg}`] : 0;
+                          return (
+                            <div className="rate-row" key={row.label}>
+                              <div className="slot-col">
+                                <div className="slot-label">{row.label}</div>
+                                <div className="slot-sub">{row.sub}</div>
+                              </div>
+                              <div className="metro">
+                                <span className="amount-label">Metro</span>
+                                <span className="amount">{fmt(metroVal)}</span>
+                              </div>
+                              <div className="regional">
+                                <span className="amount-label">Regional</span>
+                                <span className="amount">{fmt(regVal)}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+        </>
+      )}
+
+      {mainTab === "history" && (
+        <div className="rate-card p-4 fade-in">
+          <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+            <h5 className="mb-0 fw-bold d-flex align-items-center gap-2 text-dark">
+              <i className="fa fa-history" style={{ color: "var(--teal)" }}></i> Rate Request History
+            </h5>
+          </div>
+
+          {requestsLoading ? (
+            <div className="text-center py-5"><i className="fa fa-spinner fa-spin text-muted fs-4"></i></div>
+          ) : rateRequests.length === 0 ? (
+            <div className="text-center py-5">
+              <i className="fa fa-inbox text-muted mb-3" style={{ fontSize: "2rem" }}></i>
+              <div className="fw-bold text-dark mb-1">No requests</div>
+              <div className="text-muted small">You do not have any rate requests in your history.</div>
+            </div>
+          ) : (
+            <div className="table-responsive">
+              <table className="table align-middle">
+                <thead>
+                  <tr>
+                    <th className="text-muted small text-uppercase" style={{ letterSpacing: "0.5px" }}>State</th>
+                    <th className="text-muted small text-uppercase" style={{ letterSpacing: "0.5px" }}>Date</th>
+                    <th className="text-muted small text-uppercase" style={{ letterSpacing: "0.5px" }}>Admin Note</th>
+                    <th className="text-muted small text-uppercase text-center" style={{ letterSpacing: "0.5px", width: "115px" }}>Action</th>
+                    <th className="text-muted small text-uppercase text-center" style={{ letterSpacing: "0.5px", width: "115px" }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rateRequests.map(req => {
+                    const statusLower = String(req.status || "").toLowerCase();
+                    const isApproved = statusLower === "approved";
+                    const isRejected = statusLower === "rejected";
+                    const isDraft = req.is_submitted === 0 || req.is_submitted === "0";
+                    const primaryDate = req.reviewed_at || req.updated_at || req.created_at;
+
+                    return (
+                      <tr key={req.id} style={{ borderBottom: "1px solid var(--line-soft)" }}>
+                        <td className="py-3">
+                          <div className="fw-bold text-dark">{getStateLabel(req.state)}</div>
+                        </td>
+                        <td className="text-muted small py-3">
+                          <div className="fw-semibold text-dark">
+                            {primaryDate ? new Date(primaryDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                          </div>
+                          {req.created_at && primaryDate && new Date(req.created_at).toDateString() !== new Date(primaryDate).toDateString() && (
+                            <div style={{ fontSize: "11px", color: "#94a3b8" }}>
+                              Sub: {new Date(req.created_at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+                            </div>
+                          )}
+                        </td>
+                        <td className="text-muted small py-3" style={{ maxWidth: "250px" }}>
+                          {req.review_note ? (
+                            <span className="text-truncate d-inline-block w-100 text-dark" title={req.review_note}>
+                              <i className="fa fa-comment-alt text-teal me-1 opacity-75"></i> {req.review_note}
+                            </span>
+                          ) : "—"}
+                        </td>
+                        <td className="py-3 text-center" style={{ width: "115px" }}>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary rounded-pill fw-bold"
+                            style={{ width: "95px", height: "32px", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+                            onClick={() => setViewRequestRates(req)}
+                            title="View Rates"
+                          >
+                            <i className="fa fa-eye me-1"></i> View
+                          </button>
+                        </td>
+                        <td className="py-3 text-center" style={{ width: "115px" }}>
+                          {isApproved ? (
+                            <span
+                              className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill fw-bold"
+                              style={{ width: "95px", height: "32px", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "0.82rem" }}
+                            >
+                              Approved
+                            </span>
+                          ) : isRejected ? (
+                            readOnly ? (
+                              <span
+                                className="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 rounded-pill fw-bold"
+                                style={{ width: "95px", height: "32px", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "0.82rem" }}
+                              >
+                                Rejected
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-teal rounded-pill fw-bold"
+                                style={{ width: "95px", height: "32px", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+                                onClick={() => handleResubmit(req)}
+                                title="Edit & Resubmit"
+                              >
+                                <i className="fa fa-pencil me-1"></i> Resubmit
+                              </button>
+                            )
+                          ) : isDraft ? (
+                            readOnly ? (
+                              <span
+                                className="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 rounded-pill fw-bold"
+                                style={{ width: "95px", height: "32px", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "0.82rem" }}
+                              >
+                                Draft
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary rounded-pill fw-bold"
+                                style={{ width: "95px", height: "32px", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+                                onClick={() => handleResubmit(req)}
+                                title="Submit Request"
+                              >
+                                <i className="fa fa-paper-plane me-1"></i> Submit
+                              </button>
+                            )
+                          ) : (
+                            <span
+                              className="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 rounded-pill fw-bold"
+                              style={{ width: "95px", height: "32px", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "0.82rem" }}
+                            >
+                              Pending
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Request Rate Adjustment Modal ── */}
+      {!readOnly && showRequestModal && createPortal(
+        <div className="modal-overlay-premium" onClick={() => setShowRequestModal(false)}>
+          <div
+            className="modal-content-premium w-100"
+            style={{ maxWidth: "1100px" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="modal-header-premium">
+              {modalStep === "sign" ? (
+                <>
+                  <div className="rr-step-badge">
+                    <i className="fa-solid fa-file-signature"></i> Step 2 of 2: Rate Agreement &amp; Signature
+                  </div>
+                  <h5>Acknowledge &amp; Sign Rate Request</h5>
+                  <p>Review your proposed rates, provide your digital signature, and submit for admin approval.</p>
+                </>
+              ) : (
+                <>
+                  <div className="rr-step-badge">
+                    <i className="fa-solid fa-list-check"></i> Step 1 of 2: Rate Specification
+                  </div>
+                  <h5>{modalMode === "add" ? "Add Rate" : "Request Rate Update"}</h5>
+                  <p>
+                    {modalMode === "add"
+                      ? "Enter charge rates for states where no rate currently exists."
+                      : "Submit your proposed charge rates for admin review & approval."}
+                  </p>
+                </>
+              )}
+              <button
+                type="button"
+                className="modal-close-btn"
+                onClick={() => {
+                  setShowRequestModal(false);
+                  resetSignatureState();
+                }}
+                aria-label="Close modal"
+              >
+                <i className="fa fa-times"></i>
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => e.preventDefault()}
+              style={{ display: "flex", flexDirection: "column", overflow: "hidden", flex: 1 }}
+            >
+              <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px 20px" }}>
+                {modalStep === "rates" ? (
+                  <>
+                    {/* ── State Tabs Info ── */}
+                    <div className="rr-form-section" style={{ padding: "14px 20px", marginBottom: "16px" }}>
+                      <div className="rr-section-title d-flex justify-content-between align-items-center mb-2">
+                        <div style={{ fontSize: "12.5px" }}>
+                          <i className="fa fa-map-marked-alt"></i> Select State to Enter Rates
+                        </div>
+                        {modalMode === "add" && modalStates.length > 1 && activeStateTab && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-teal"
+                            style={{ fontSize: "12px", borderRadius: "20px" }}
+                            onClick={handleApplyAll}
+                            title="Apply rates to all other states"
+                          >
+                            <i className="fa fa-copy me-1"></i> Apply All
+                          </button>
+                        )}
+                      </div>
+
+                      {modalStates.length > 0 ? (
+                        <div className="rr-tab-bar w-100 mb-1">
+                          {modalStates.map(s => (
+                            <button
+                              key={s}
+                              type="button"
+                              className={`rr-tab-btn flex-grow-1 justify-content-center ${activeStateTab === s ? "active" : ""}`}
+                              onClick={() => setActiveStateTab(s)}
+                            >
+                              <i className="fa fa-map-marker-alt"></i> {getStateLabel(s)}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-muted text-center py-3">No states selected in profile. Please select states in Personal Information to proceed.</div>
+                      )}
+                      {modalStates.length > 0 && (
+                        <p className="text-muted mt-2 mb-0 text-center" style={{ fontSize: "12.5px" }}>
+                          You are currently editing rates for <strong>{STATE_NAME_MAP[activeStateTab] || activeStateTab}</strong>
+                        </p>
+                      )}
+                    </div>
+
+                    {/* ── Slot Cards Grid (5 rows) ── */}
+                    {activeStateTab && (
+                      <div className="row g-3 mb-4 fade-in">
+                        {SLOT_ROWS.map((row) => {
+                          const metroKey = `def_${row.metro}`;
+                          const regKey = `def_${row.reg}`;
+                          const currentForm = requestForm[activeStateTab] || {};
+                          return (
+                            <div className="col-12 col-sm-6 col-xl-4" key={row.label}>
+                              <div className="rr-slot-card h-100">
+                                <div className="rr-slot-header">
+                                  <span className="rr-slot-name">{row.label}</span>
+                                  <span className="rr-slot-time">{row.sub}</span>
+                                </div>
+                                <div className="row g-2">
+                                  {/* Metro */}
+                                  <div className="col-6">
+                                    <div className="rr-input-group">
+                                      <div className="rr-input-label metro">
+                                        <i className="fa fa-city" style={{ fontSize: "9px", marginRight: "3px" }}></i> Metro
+                                      </div>
+                                      <div className={`rr-input-wrap metro ${formErrors[activeStateTab]?.[metroKey] ? 'has-error' : ''}`}>
+                                        <span className="rr-currency-sign">$</span>
+                                        <input
+                                          type="number" step="0.01" min="0"
+                                          className="rr-field"
+                                          id={metroKey}
+                                          placeholder="0.00"
+                                          value={currentForm[metroKey] ?? ""}
+                                          onChange={handleRequestFormChange}
+                                          onWheel={(e) => e.target.blur()}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.preventDefault();
+                                              return;
+                                            }
+                                            if (['e', 'E', '+', '-', 'ArrowUp', 'ArrowDown'].includes(e.key)) e.preventDefault();
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {/* Regional */}
+                                  <div className="col-6">
+                                    <div className="rr-input-group">
+                                      <div className="rr-input-label regional">
+                                        <i className="fa fa-tree" style={{ fontSize: "9px", marginRight: "3px" }}></i> Regional
+                                      </div>
+                                      <div className={`rr-input-wrap regional ${formErrors[activeStateTab]?.[regKey] ? 'has-error' : ''}`}>
+                                        <span className="rr-currency-sign">$</span>
+                                        <input
+                                          type="number" step="0.01" min="0"
+                                          className="rr-field"
+                                          id={regKey}
+                                          placeholder="0.00"
+                                          value={currentForm[regKey] ?? ""}
+                                          onChange={handleRequestFormChange}
+                                          onWheel={(e) => e.target.blur()}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.preventDefault();
+                                              return;
+                                            }
+                                            if (['e', 'E', '+', '-', 'ArrowUp', 'ArrowDown'].includes(e.key)) e.preventDefault();
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* ── Notes ── */}
+                    <div className="rr-reason-section">
+                      <div className="rr-reason-label">
+                        <i className="fa fa-comment-alt"></i>
+                        Notes for Admin
+                        <span className="optional">(Optional)</span>
+                      </div>
+                      <textarea
+                        id="reason"
+                        className="rr-reason-textarea"
+                        placeholder="Tell the admin why you're requesting these rate changes. Providing context helps get a faster review…"
+                        value={requestForm.reason || ""}
+                        onChange={handleRequestFormChange}
+                        rows={3}
+                      ></textarea>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* ── Rate Acknowledgement Legal Box ── */}
+                    <div className="rr-agreement-box">
+                      <h6>
+                        <i className="fa-solid fa-shield-halved text-success"></i>
+                        Contractor Rate Acknowledgement &amp; Declaration
+                      </h6>
+                      <p>
+                        I, the undersigned authorized representative, hereby submit and acknowledge the proposed charge rates detailed below. I understand and agree that upon review and approval by Staffoo Admin, these acknowledged rates will take effect on my account.
+                      </p>
+                    </div>
+
+                    {/* ── Summary of Rates to be Signed ── */}
+                    <div className="rr-summary-box">
+                      <div className="rr-summary-title">
+                        <div className="d-flex align-items-center gap-2">
+                          <span className="rr-summary-header-icon">
+                            <i className="fa-solid fa-clipboard-check"></i>
+                          </span>
+                          <div>
+                            <div style={{ fontSize: "14px", fontWeight: "800", color: "#0a1e3a" }}>
+                              Summary of Proposed Rates
+                            </div>
+                            <div style={{ fontSize: "11.5px", color: "#64748b", fontWeight: "normal" }}>
+                              Review your requested hourly rates before acknowledging and signing
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary rounded-pill d-inline-flex align-items-center gap-1"
+                          style={{ fontSize: "11.5px", padding: "4px 14px", fontWeight: 600 }}
+                          onClick={() => setModalStep("rates")}
+                        >
+                          <i className="fa-solid fa-pencil"></i> Edit Rates
+                        </button>
+                      </div>
+
+                      <div className="row g-3">
+                        {modalStates.map((st) => {
+                          const stateRates = requestForm[st] || {};
+                          return (
+                            <div className={modalStates.length === 1 ? "col-12" : "col-12 col-xl-6"} key={st}>
+                              <div className="rr-summary-state-card">
+                                <div className="rr-summary-state-header">
+                                  <div className="d-flex align-items-center gap-2">
+                                    <i className="fa-solid fa-location-dot text-teal"></i>
+                                    <span className="fw-bold text-dark" style={{ fontSize: "13px" }}>{getStateLabel(st)}</span>
+                                  </div>
+                                  <span className="badge rounded-pill rr-summary-state-badge">
+                                    <i className="fa-solid fa-clock-rotate-left me-1"></i> Proposed
+                                  </span>
+                                </div>
+
+                                <div className="table-responsive">
+                                  <table className="table table-borderless rr-summary-table mb-0">
+                                    <thead>
+                                      <tr>
+                                        <th style={{ width: "42%" }}>Time Slot</th>
+                                        <th style={{ width: "29%" }} className="text-center">Metro</th>
+                                        <th style={{ width: "29%" }} className="text-center">Regional</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {SLOT_ROWS.map((row) => {
+                                        const m = stateRates[`def_${row.metro}`] ?? stateRates[row.metro];
+                                        const r = stateRates[`def_${row.reg}`] ?? stateRates[row.reg];
+                                        if (m === undefined && r === undefined) return null;
+                                        return (
+                                          <tr key={row.metro}>
+                                            <td className="align-middle">
+                                              <div className="fw-bold text-dark" style={{ fontSize: "12.5px" }}>{row.label}</div>
+                                              {row.sub && <div className="text-muted" style={{ fontSize: "11px", fontWeight: "normal" }}>{row.sub}</div>}
+                                            </td>
+                                            <td className="align-middle text-center">
+                                              <span className="rr-rate-tag metro">
+                                                {m !== undefined && m !== null && m !== "" ? fmt(m) : "—"}
+                                              </span>
+                                            </td>
+                                            <td className="align-middle text-center">
+                                              <span className="rr-rate-tag regional">
+                                                {r !== undefined && r !== null && r !== "" ? fmt(r) : "—"}
+                                              </span>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {requestForm.reason && (
+                        <div className="mt-3 p-2 px-3 bg-white rounded-2 border" style={{ fontSize: "12px" }}>
+                          <span className="text-muted fw-bold">Notes for Admin: </span>
+                          <span className="text-dark">{requestForm.reason}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Signature Section ── */}
+                    <div className="rr-sig-box">
+                      <div className="rr-sig-title">
+                        <i className="fa-solid fa-signature text-teal"></i>
+                        Authorized Digital Signature <span className="text-danger">*</span>
+                      </div>
+
+                      <label className="form-label fw-bold text-dark small mb-1" htmlFor="rr_signature_name">
+                        Full Legal Name (Signatory) <span className="text-danger">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="rr_signature_name"
+                        className={`rr-name-input ${sigErrors.signatureName ? "has-error" : ""}`}
+                        placeholder="Enter your full legal name"
+                        value={signatureName}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSignatureName(val);
+                          if (sigErrors.signatureName) setSigErrors((p) => ({ ...p, signatureName: null }));
+                        }}
+                      />
+                      {sigErrors.signatureName && (
+                        <div className="rr-sig-error mb-3">
+                          <i className="fa-solid fa-circle-exclamation"></i> {sigErrors.signatureName}
+                        </div>
+                      )}
+
+                      {/* Mode switcher: Draw Signature | Auto-Generate */}
+                      <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                        <label className="form-label fw-bold text-dark small mb-0">
+                          Sign Here <span className="text-danger">*</span>
+                        </label>
+                        <div className="rr-sig-tabs" role="tablist">
+                          <button
+                            type="button"
+                            className={`rr-sig-tab ${sigMode === "draw" ? "active" : ""}`}
+                            onClick={() => setSigMode("draw")}
+                          >
+                            <i className="fa-solid fa-pen-nib"></i>
+                            <span>Draw Signature</span>
+                          </button>
+                          <button
+                            type="button"
+                            className={`rr-sig-tab ${sigMode === "auto" ? "active" : ""}`}
+                            onClick={() => setSigMode("auto")}
+                          >
+                            <i className="fa-solid fa-wand-magic-sparkles"></i>
+                            <span>Auto-Generate</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <SignaturePad
+                        ref={sigPadRef}
+                        mode={sigMode}
+                        name={signatureName}
+                        height={180}
+                        onChange={({ isEmpty, dataUrl }) => {
+                          setHasSignature(!isEmpty);
+                          setSignatureImage(dataUrl || "");
+                          if (!isEmpty && sigErrors.signature) {
+                            setSigErrors((p) => ({ ...p, signature: null }));
+                          }
+                        }}
+                        placeholderText={
+                          sigMode === "auto"
+                            ? "Enter your legal name above to generate signature"
+                            : "Draw your signature here with finger, mouse or stylus"
+                        }
+                      />
+                      {sigErrors.signature && (
+                        <div className="rr-sig-error mt-2">
+                          <i className="fa-solid fa-circle-exclamation"></i> {sigErrors.signature}
+                        </div>
+                      )}
+
+                      {/* Terms & Conditions Checkbox */}
+                      <label className="rr-terms-label">
+                        <input
+                          type="checkbox"
+                          checked={agreeTerms}
+                          onChange={(e) => {
+                            setAgreeTerms(e.target.checked);
+                            if (sigErrors.agreeTerms) setSigErrors((p) => ({ ...p, agreeTerms: null }));
+                          }}
+                        />
+                        <span>
+                          I have read, understood, and agree to the{" "}
+                          <a
+                            href="/resource-partner-terms"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: "#0A7C6E", fontWeight: 700, textDecoration: "underline" }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Resource Partner Terms &amp; Conditions
+                          </a>
+                          <span className="text-danger ms-1">*</span>
+                        </span>
+                      </label>
+                      {sigErrors.agreeTerms && (
+                        <div className="rr-sig-error">
+                          <i className="fa-solid fa-circle-exclamation"></i> {sigErrors.agreeTerms}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="rr-footer">
+                <div className="rr-footer-hint">
+                  <i className="fa fa-shield-alt text-teal"></i>
+                  {modalStep === "sign"
+                    ? (!agreeTerms
+                        ? "Please accept the Terms & Conditions above to enable submission."
+                        : "Digital signature is legally timestamped upon submission.")
+                    : "Your request will be reviewed by the Staffoo admin team."}
+                </div>
+                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                  {modalStep === "sign" ? (
+                    <>
+                      <button
+                        type="button"
+                        className="rr-btn-cancel"
+                        onClick={() => setModalStep("rates")}
+                        disabled={isSavingAndSubmitting}
+                      >
+                        <i className="fa-solid fa-arrow-left me-2"></i>
+                        Back to Edit Rates
+                      </button>
+                      <button
+                        type="button"
+                        className="rr-btn-submit"
+                        onClick={(e) => handleRequestSubmit(e, 1)}
+                        disabled={isSavingAndSubmitting || !agreeTerms}
+                        title={!agreeTerms ? "Please accept the Resource Partner Terms & Conditions to enable submission" : ""}
+                        style={{
+                          opacity: (!agreeTerms || isSavingAndSubmitting) ? 0.5 : 1,
+                          cursor: (!agreeTerms || isSavingAndSubmitting) ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {isSavingAndSubmitting ? (
+                          <>
+                            <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" style={{ width: "14px", height: "14px", borderWidth: "2px" }}></span>
+                            Submitting Signed Request…
+                          </>
+                        ) : (
+                          <>
+                            <i className="fa-solid fa-signature"></i>
+                            Acknowledge, Sign &amp; Submit
+                          </>
+                        )}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="rr-btn-secondary"
+                        onClick={(e) => handleRequestSubmit(e, 0)}
+                        disabled={isSavingAndExiting || isSavingAndSubmitting || modalStates.length === 0 || !hasFormChanged}
+                        title={!hasFormChanged ? "Please make changes before saving" : ""}
+                      >
+                        {isSavingAndExiting ? (
+                          <>
+                            <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" style={{ width: "14px", height: "14px", borderWidth: "2px" }}></span>
+                            Saving…
+                          </>
+                        ) : (
+                          <>
+                            <i className="fa-solid fa-floppy-disk"></i>
+                            Save and Exit
+                          </>
+                        )}
+                      </button>
+
+                      {modalStates.indexOf(activeStateTab) < modalStates.length - 1 ? (
+                        <button type="button" className="rr-btn-submit" onClick={handleNextState} disabled={isSavingAndExiting || isSavingAndSubmitting || modalStates.length === 0}>
+                          Next <i className="fa-solid fa-arrow-right ms-2"></i>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="rr-btn-submit"
+                          onClick={handleProceedToSign}
+                          disabled={isSavingAndExiting || isSavingAndSubmitting || modalStates.length === 0 || !hasFormChanged}
+                          title={!hasFormChanged ? "Please make changes before proceeding" : ""}
+                        >
+                          Review &amp; Sign <i className="fa-solid fa-file-signature ms-2"></i>
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {viewRequestRates && createPortal(
+        <div className="modal-overlay-premium" onClick={() => setViewRequestRates(null)}>
+          <div
+            className="modal-content-premium w-100"
+            style={{ maxWidth: "800px" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header-premium">
+              <h5>Requested Rates — {getStateLabel(viewRequestRates.state)}</h5>
+              <button type="button" className="modal-close-btn" onClick={() => setViewRequestRates(null)} aria-label="Close modal">
+                <i className="fa fa-times"></i>
+              </button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
+              <div className="mb-4 d-flex align-items-center gap-3">
+                <span className={`badge rounded-pill px-3 py-2 border ${viewRequestRates.status === 'approved' ? 'bg-success bg-opacity-10 text-success border-success' :
+                  viewRequestRates.status === 'rejected' ? 'bg-danger bg-opacity-10 text-danger border-danger' :
+                    'bg-warning bg-opacity-10 text-warning border-warning'
+                  }`}>
+                  {viewRequestRates.status === 'approved' ? <i className="fa fa-check-circle me-1"></i> :
+                    viewRequestRates.status === 'rejected' ? <i className="fa fa-times-circle me-1"></i> :
+                      <i className="fa fa-hourglass-half me-1"></i>}
+                  <span className="text-capitalize">{viewRequestRates.status}</span>
+                </span>
+                <span className="text-muted small">
+                  Submitted on {new Date(viewRequestRates.created_at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+                </span>
+              </div>
+
+              {viewRequestRates.review_note && (
+                <div className="alert bg-light border-0 rounded-3 mb-4 d-flex align-items-start gap-3">
+                  <i className="fa fa-comment-alt text-teal mt-1"></i>
+                  <div>
+                    <div className="fw-bold text-dark small mb-1">Admin Note</div>
+                    <div className="text-secondary small">{viewRequestRates.review_note}</div>
+                  </div>
+                </div>
+              )}
+
+              <div className="rate-card p-0 mb-4 shadow-none border">
+                <div className="d-none d-md-flex align-items-center py-2 px-3 bg-light border-bottom text-muted small fw-bold text-uppercase" style={{ letterSpacing: "0.5px" }}>
+                  <div style={{ flex: "1 1 40%" }}>Time Slot</div>
+                  <div style={{ flex: "1 1 30%" }}>Metro ($)</div>
+                  <div style={{ flex: "1 1 30%" }}>Regional ($)</div>
+                </div>
+                {SLOT_ROWS.map((row) => {
+                  const mk = `def_${row.metro}`;
+                  const rk = `def_${row.reg}`;
+                  const metroVal = viewRequestRates[mk] ?? viewRequestRates[row.metro];
+                  const regVal = viewRequestRates[rk] ?? viewRequestRates[row.reg];
+
+                  if (metroVal === undefined && regVal === undefined) return null;
+
+                  return (
+                    <div className="d-flex flex-column flex-md-row align-items-md-center py-3 px-3 border-bottom" key={row.label}>
+                      <div style={{ flex: "1 1 40%" }} className="mb-2 mb-md-0">
+                        <div className="fw-bold text-dark">{row.label}</div>
+                        {row.sub && <div className="text-muted small">{row.sub}</div>}
+                      </div>
+                      <div style={{ flex: "1 1 30%" }} className="mb-2 mb-md-0">
+                        <div className="d-md-none text-muted small mb-1">Metro</div>
+                        <div className="fw-bold text-teal">{metroVal !== null && metroVal !== undefined ? fmt(metroVal) : "—"}</div>
+                      </div>
+                      <div style={{ flex: "1 1 30%" }}>
+                        <div className="d-md-none text-muted small mb-1">Regional</div>
+                        <div className="fw-bold text-primary">{regVal !== null && regVal !== undefined ? fmt(regVal) : "—"}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {viewRequestRates.notes && (
+                <div className="mb-3">
+                  <label className="fw-bold small text-muted text-uppercase mb-2" style={{ letterSpacing: "0.5px" }}>My Request Reason</label>
+                  <div className="p-3 bg-light rounded-3 text-secondary small border">
+                    {viewRequestRates.notes}
+                  </div>
+                </div>
+              )}
+
+              {/* Digital Acknowledgement & Signature info */}
+              {(viewRequestRates.signature_name || viewRequestRates.signature_image || viewRequestRates.signature || viewRequestRates.is_acknowledged) && (
+                <div className="bg-light rounded-3 p-3 border mt-3">
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <span className="fw-bold small text-dark d-flex align-items-center gap-2">
+                      <i className="fa-solid fa-file-signature text-teal"></i>
+                      My Digital Acknowledgement
+                    </span>
+                    <span className="badge rounded-pill bg-success bg-opacity-10 text-success border border-success border-opacity-25" style={{ fontSize: "11px" }}>
+                      <i className="fa fa-check-circle me-1"></i> Acknowledged &amp; Signed
+                    </span>
+                  </div>
+                  <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 text-muted small">
+                    <div>
+                      <span>Signed by: </span>
+                      <strong className="text-dark">{viewRequestRates.signature_name || "Authorized Representative"}</strong>
+                    </div>
+                    {(viewRequestRates.signed_at || viewRequestRates.created_at) && (
+                      <div>
+                        <span>Date: </span>
+                        <span>{new Date(viewRequestRates.signed_at || viewRequestRates.created_at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}</span>
+                      </div>
+                    )}
+                  </div>
+                  {(viewRequestRates.signature_image || viewRequestRates.signature) && (
+                    <div className="mt-2 p-2 bg-white rounded-2 border text-center" style={{ maxHeight: "80px", overflow: "hidden" }}>
+                      <img
+                        src={resolveSignatureUrl(viewRequestRates.signature_image || viewRequestRates.signature)}
+                        alt="Signature"
+                        style={{ maxHeight: "60px", maxWidth: "100%", objectFit: "contain" }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>,
+        document.body
+      )}
+
+    </div>
+  );
+};
+
+export default ContractorRatesView;

@@ -1,0 +1,1988 @@
+import React, { useState, useMemo, useCallback, useEffect } from "react";
+import { useLocation } from "react-router-dom";
+import Select from "react-select";
+import useFetch from "../hooks/useFetch";
+import useSubmit from "../hooks/useSubmit";
+import { useSelector } from "react-redux";
+import Loader from "../components/Loader";
+import { toast } from "react-toastify";
+import { TIME_KEYS, resolveSignatureUrl } from "../utils/exports";
+
+const RATE_CATEGORIES = ["def", "eba"];
+
+const UI_SLOT_ROWS = [
+  { label: "Mon–Fri Day", metro: "metro_mon_to_fri_day_rate", reg: "reg_mon_to_fri_day_rate" },
+  { label: "Mon–Fri Night", metro: "metro_mon_to_fri_night_rate", reg: "reg_mon_to_fri_night_rate" },
+  { label: "Saturday", metro: "metro_sat_day_rate", reg: "reg_sat_day_rate" },
+  { label: "Sunday", metro: "metro_sun_day_rate", reg: "reg_sun_day_rate" },
+  { label: "Public Holiday", metro: "metro_pub_holi_day_rate", reg: "reg_pub_holi_day_rate" },
+];
+
+const CONTRACTOR_STATES = [
+  { value: "", label: "Select State...", disabled: true },
+  { value: "nsw", label: "New South Wales (NSW)" },
+  { value: "vic", label: "Victoria (VIC)" },
+  { value: "qld", label: "Queensland (QLD)" },
+  { value: "wa", label: "Western Australia (WA)" },
+  { value: "sa", label: "South Australia (SA)" },
+  { value: "tas", label: "Tasmania (TAS)" },
+  { value: "act", label: "Australian Capital Territory (ACT)" },
+  { value: "nt", label: "Northern Territory (NT)" },
+];
+
+const CHARGE_STATES = [
+  { value: "NSW", label: "New South Wales (NSW)" },
+  { value: "VIC", label: "Victoria (VIC)" },
+  { value: "QLD", label: "Queensland (QLD)" },
+  { value: "WA", label: "Western Australia (WA)" },
+  { value: "SA", label: "South Australia (SA)" },
+  { value: "TAS", label: "Tasmania (TAS)" },
+  { value: "ACT", label: "Australian Capital Territory (ACT)" },
+  { value: "NT", label: "Northern Territory (NT)" },
+];
+
+const JOB_LEVEL_OPTIONS = [
+  { value: "1", label: "Level 1" },
+  { value: "2", label: "Level 2" },
+  { value: "3", label: "Level 3" },
+  { value: "4", label: "Level 4" },
+  { value: "5", label: "Level 5" },
+];
+
+const JOB_LEVEL_DEFINITIONS = {
+  1: {
+    level: "1",
+    label: "Level 1",
+    title: "Level 1 Charge Rate",
+    roles: [
+      "Crowd Controller",
+      "Static Security Officer",
+      "Patrol Staff",
+    ],
+  },
+  2: {
+    level: "2",
+    label: "Level 2",
+    title: "Level 2 Charge Rate",
+    roles: [
+      "Security Officer - Monitoring/Control Room",
+    ],
+  },
+  3: {
+    level: "3",
+    label: "Level 3",
+    title: "Level 3 Charge Rate",
+    roles: [
+      "Control Room Operator",
+      "Event/Venue Supervisor",
+    ],
+  },
+  4: {
+    level: "4",
+    label: "Level 4",
+    title: "Level 4 Charge Rate",
+    roles: [
+      "Senior Security Supervisor / Shift Supervisor",
+    ],
+  },
+  5: {
+    level: "5",
+    label: "Level 5",
+    title: "Level 5 Charge Rate",
+    roles: [
+      "Security Operations Manager",
+      "Regional Contract Manager",
+      "Compliance Auditor",
+    ],
+  },
+};
+
+const STATE_NAME_MAP = {
+  NSW: "New South Wales",
+  VIC: "Victoria",
+  QLD: "Queensland",
+  WA: "Western Australia",
+  SA: "South Australia",
+  TAS: "Tasmania",
+  ACT: "Australian Capital Territory",
+  NT: "Northern Territory",
+
+  nsw: "New South Wales",
+  vic: "Victoria",
+  qld: "Queensland",
+  wa: "Western Australia",
+  sa: "South Australia",
+  tas: "Tasmania",
+  act: "Australian Capital Territory",
+  nt: "Northern Territory",
+};
+
+// All states for non‑contractor
+const ALL_STATES = [
+  { value: "", label: "Select State...", disabled: true },
+  { value: "NSW", label: "New South Wales (NSW)" },
+  { value: "VIC", label: "Victoria (VIC)" },
+  { value: "QLD", label: "Queensland (QLD)" },
+  { value: "WA", label: "Western Australia (WA)" },
+  { value: "SA", label: "South Australia (SA)" },
+  { value: "TAS", label: "Tasmania (TAS)" },
+  { value: "ACT", label: "Australian Capital Territory (ACT)" },
+  { value: "NT", label: "Northern Territory (NT)" },
+];
+
+// Custom styles for React Select to match the green theme
+const selectStyles = {
+  control: (base, state) => ({
+    ...base,
+    borderColor: state.isFocused ? '#0A7C6E' : '#e2e8f0',
+    boxShadow: state.isFocused ? '0 0 0 1px #0A7C6E' : 'none',
+    minHeight: '38px',
+    '&:hover': {
+      borderColor: '#0A7C6E'
+    }
+  }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: state.isSelected
+      ? '#0A7C6E'
+      : state.isFocused
+        ? '#f0fdf9'
+        : 'white',
+    color: state.isSelected ? 'white' : '#1e293b',
+    cursor: 'pointer',
+    '&:active': {
+      backgroundColor: '#075e53'
+    }
+  })
+};
+
+// Reusable close button
+const ModalCloseButton = ({ onClick }) => (
+  <button
+    type="button"
+    className="modal-close-btn"
+    onClick={onClick}
+    aria-label="Close"
+  >
+    <i className="fa fa-times"></i>
+  </button>
+);
+
+const RatesList = ({ forcedType } = {}) => {
+  const location = useLocation();
+  const { pathname, state } = location;
+  const rateTypeFromState = state && state.rateType;
+
+  // Determine mode
+  const isCharge = forcedType
+    ? forcedType === "charge"
+    : rateTypeFromState
+      ? rateTypeFromState === "charge"
+      : pathname.includes("charge");
+  const isContractor = forcedType === "contractor";
+  const isPayRate = forcedType === "pay" || (!forcedType && rateTypeFromState === "pay");
+
+  const title = isContractor
+    ? "Resource Partner Charge Rates"
+    : isCharge
+      ? "Charge Rates"
+      : "Pay Rates";
+
+  const firstColumn = isContractor
+    ? "Resource Partner Rate"
+    : isCharge
+      ? "Charged Rate"
+      : "Pay Rate";
+
+  // Endpoints
+  const listEndpoint = useMemo(() => {
+    if (isContractor) return null; // No longer fetching active rates for admin review (only requests)
+    if (isCharge) return "api/get-all-chargerates";
+    return "api/get-all-payrates";
+  }, [isCharge, isContractor]);
+
+  const updateEndpoint = useMemo(() => {
+    if (isContractor) return "api/update-contractor-rate";
+    if (isCharge) return "api/charge_rate/update";
+    return "api/payrate/update";
+  }, [isCharge, isContractor]);
+
+  // Contractors data
+  const {
+    data: contractorsResp,
+    error: contractorsError,
+  } = useFetch("api/admin/get-contractors", {
+    isAuth: true,
+    immediate: false, // Not needed in contractor mode anymore
+  });
+
+  const contractors = useMemo(() => {
+    if (!contractorsResp) return [];
+    const arr = contractorsResp.data?.data ?? contractorsResp.data;
+    return Array.isArray(arr) ? arr : [];
+  }, [contractorsResp]);
+
+  // Prepare react‑select options
+  const contractorOptions = useMemo(() => {
+    return contractors.map((c) => ({
+      value: c.id,
+      label: c.name + (c.contractor?.company_name ? ` - ${c.contractor.company_name}` : ""),
+    }));
+  }, [contractors]);
+
+  // State for modals
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [isViewMode, setIsViewMode] = useState(false);
+
+  // Rate request review state
+  const [reviewRequest, setReviewRequest] = useState(null); // { request, mode: "view"|"reject" }
+  const [reviewNote, setReviewNote] = useState("");
+  const [processingRequestId, setProcessingRequestId] = useState(null);
+  const [requestTab, setRequestTab] = useState("approved"); // "approved" | "rejected"
+  const [selectedPartner, setSelectedPartner] = useState(null); // group object
+
+  // Prevent background scrolling when any modal is open
+  useEffect(() => {
+    if (reviewRequest || showEditModal || selectedPartner) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => { document.body.style.overflow = "unset"; };
+  }, [reviewRequest, showEditModal, selectedPartner]);
+
+  const { userdata } = useSelector((state) => state.auth || {});
+  const userType = userdata?.data?.user_type || userdata?.user_type;
+  const isAdmin = userType === "admin";
+
+  const { data, loading, error, refetch } = useFetch(listEndpoint, {
+    isAuth: true,
+    immediate: true,
+  });
+  const { submit, loading: submitting } = useSubmit({ isAuth: true });
+
+  // Fetch contractor rate requests (contractor mode only)
+  const {
+    data: requestsData,
+    loading: requestsLoading,
+    refetch: refetchRequests,
+  } = useFetch(isContractor ? `api/charge-rate-requests?status=${requestTab}` : null, {
+    isAuth: true,
+    immediate: isContractor,
+  });
+
+  const rateRequests = useMemo(() => {
+    if (!requestsData) return [];
+    const arr = requestsData?.data ?? requestsData;
+    const reqs = Array.isArray(arr) ? arr : [];
+    const filtered = requestTab === "pending"
+      ? reqs.filter((r) => r.is_submitted !== 0 && r.is_submitted !== "0")
+      : reqs;
+
+    return [...filtered].sort((a, b) => {
+      const timeA = Math.max(
+        new Date(a.reviewed_at || 0).getTime(),
+        new Date(a.updated_at || 0).getTime(),
+        new Date(a.created_at || 0).getTime()
+      );
+      const timeB = Math.max(
+        new Date(b.reviewed_at || 0).getTime(),
+        new Date(b.updated_at || 0).getTime(),
+        new Date(b.created_at || 0).getTime()
+      );
+      return timeB - timeA;
+    });
+  }, [requestsData, requestTab]);
+
+  const groupedRequests = useMemo(() => {
+    const groups = {};
+    rateRequests.forEach((req) => {
+      const partnerName = req.user?.name || req.contractor_name || "Resource Partner";
+      const partnerCompany = req.user?.contractor?.company_name || req.company_name || "";
+      const partnerId = req.user_id || req.contractor_id || req.user?.id;
+      const key = partnerId
+        ? `id_${partnerId}`
+        : `${partnerName.trim().toLowerCase()}__${partnerCompany.trim().toLowerCase()}`;
+
+      if (!groups[key]) {
+        groups[key] = { partnerName, partnerCompany, requests: [], key };
+      } else {
+        if (!groups[key].partnerCompany && partnerCompany) {
+          groups[key].partnerCompany = partnerCompany;
+        }
+      }
+      groups[key].requests.push(req);
+    });
+
+    Object.values(groups).forEach((g) => {
+      g.requests.sort((a, b) => {
+        const timeA = Math.max(
+          new Date(a.reviewed_at || 0).getTime(),
+          new Date(a.updated_at || 0).getTime(),
+          new Date(a.created_at || 0).getTime()
+        );
+        const timeB = Math.max(
+          new Date(b.reviewed_at || 0).getTime(),
+          new Date(b.updated_at || 0).getTime(),
+          new Date(b.created_at || 0).getTime()
+        );
+        return timeB - timeA;
+      });
+    });
+
+    return Object.values(groups);
+  }, [rateRequests]);
+
+  // Helper: initials avatar
+  const getInitials = (name) =>
+    name
+      .split(" ")
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() || "")
+      .join("");
+
+  const adminId = userdata?.data?.id || userdata?.id || null;
+
+  const handleApproveRequest = async (request) => {
+    setProcessingRequestId(request.id);
+    try {
+      const res = await submit(
+        `api/accept-charge-rate-request/${request.id}`,
+        {
+          admin_id: adminId,
+          signature_name: request.signature_name || request.signature?.name || "",
+          signature_image: request.signature_image || request.signature?.image || request.signature || "",
+          is_signed: 1,
+          already_signed: 1,
+        },
+        { method: "POST" }
+      );
+      if (res?.success || res?.code === 200) {
+        toast.success(res?.message || "Rate request approved successfully!");
+        setReviewRequest(null);
+        await refetchRequests();
+        if (listEndpoint) await refetch(listEndpoint);
+      } else {
+        toast.error(res?.message || "Failed to approve request.");
+      }
+    } catch (err) {
+      toast.error("Failed to approve request.");
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
+  const handleRejectRequest = async (request) => {
+    setProcessingRequestId(request.id);
+    try {
+      const res = await submit(
+        `api/reject-charge-rate-request/${request.id}`,
+        { admin_id: adminId, reason: reviewNote },
+        { method: "POST" }
+      );
+      if (res?.success || res?.code === 200) {
+        toast.success(res?.message || "Rate request rejected.");
+        setReviewRequest(null);
+        setReviewNote("");
+        await refetchRequests();
+      } else {
+        toast.error(res?.message || "Failed to reject request.");
+      }
+    } catch (err) {
+      toast.error("Failed to reject request.");
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
+  const makeInitialForm = useCallback(() => {
+    const f = {
+      title: "",
+      position: "full_time",
+      level: "",
+      state: "",
+      ot_base_rate: "",
+      id: null,
+      user_id: "",
+    };
+    RATE_CATEGORIES.forEach((c) =>
+      TIME_KEYS.forEach((t) => (f[`${c}_${t}`] = "")),
+    );
+    return f;
+  }, []);
+
+  const [form, setForm] = useState(makeInitialForm());
+
+  const handleFormChange = useCallback((e) => {
+    const { id, value } = e.target;
+    setForm((s) => ({ ...s, [id]: value }));
+  }, []);
+
+  // Handler for react‑select single
+  const handleContractorChange = useCallback((selectedOption) => {
+    setForm((s) => ({
+      ...s,
+      user_id: selectedOption ? selectedOption.value : "",
+      level: selectedOption ? selectedOption.label : "",
+    }));
+  }, []);
+
+  // Open edit modal (or view modal)
+  const handleEditOpen = useCallback(
+    (rateObj, viewOnly = false) => {
+      setIsViewMode(viewOnly);
+      const cleanRate = { ...rateObj };
+
+      const existingUserId = cleanRate.user_id;
+
+      delete cleanRate.name;
+      delete cleanRate.rate;
+
+      if (!isContractor) delete cleanRate.user_id;
+
+      // Convert state to uppercase so it matches dropdown values ("vic" -> "VIC")
+      if (cleanRate.state) {
+        cleanRate.state = cleanRate.state.toUpperCase();
+      }
+
+      // Ensure user_id is properly mapped for contractors
+      if (isContractor) {
+        if (existingUserId) {
+          cleanRate.user_id = existingUserId;
+        } else if (cleanRate.user?.id) {
+          cleanRate.user_id = cleanRate.user.id;
+        }
+      }
+
+      if (isCharge || isPayRate) {
+        const lvlNum = String(cleanRate.level || "").replace(/\D/g, "") || "1";
+        cleanRate.level = lvlNum;
+        const rateSuffix = isCharge ? "Charge Rate" : "Pay Rate";
+        if (!cleanRate.title || !cleanRate.title.toLowerCase().includes(rateSuffix.toLowerCase())) {
+          cleanRate.title = `Level ${lvlNum} ${rateSuffix}`;
+        }
+      }
+
+      setForm({ ...makeInitialForm(), ...cleanRate });
+      setShowEditModal(true);
+    },
+    [makeInitialForm, isContractor, isCharge, isPayRate],
+  );
+
+  const handleViewOpen = useCallback(
+    (rateObj) => {
+      handleEditOpen(rateObj, true);
+    },
+    [handleEditOpen],
+  );
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setIsViewMode(false);
+    setForm(makeInitialForm());
+  };
+
+  const handleLevelSelectChange = useCallback(
+    (selectedOption) => {
+      const val = selectedOption ? selectedOption.value : "";
+      const rateSuffix = isCharge ? "Charge Rate" : isPayRate ? "Pay Rate" : "Rate";
+      setForm((s) => ({
+        ...s,
+        level: val,
+        title: (isCharge || isPayRate) && val ? `Level ${val} ${rateSuffix}` : s.title,
+      }));
+    },
+    [isCharge, isPayRate],
+  );
+
+  const selectedChargeStates = useMemo(() => {
+    if (!form.state) return [];
+    const rawList = Array.isArray(form.state)
+      ? form.state
+      : String(form.state)
+          .split(",")
+          .map((s) => s.trim().toUpperCase());
+    return CHARGE_STATES.filter((opt) => rawList.includes(opt.value));
+  }, [form.state]);
+
+  const handleChargeStatesChange = useCallback((selectedOptions) => {
+    const values = selectedOptions ? selectedOptions.map((o) => o.value) : [];
+    setForm((prev) => ({
+      ...prev,
+      state: values.join(", "),
+    }));
+  }, []);
+
+  const currentLevelNum = useMemo(() => {
+    const parsed = String(form.level || "").replace(/\D/g, "");
+    return parsed && JOB_LEVEL_DEFINITIONS[parsed] ? parsed : "1";
+  }, [form.level]);
+
+  const selectedLevelDef = useMemo(() => {
+    return JOB_LEVEL_DEFINITIONS[currentLevelNum] || JOB_LEVEL_DEFINITIONS[1];
+  }, [currentLevelNum]);
+
+  // Submit edit (update)
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (isViewMode) return;
+    const body = { ...form };
+    body.customer_id = userdata?.data?.id || userdata?.id || null;
+
+    if (body.ot_base_rate !== "") {
+      body.ot_base_rate = Number(body.ot_base_rate);
+    }
+
+    if (isCharge || isPayRate) {
+      TIME_KEYS.forEach((t) => {
+        body[`eba_${t}`] = body[`def_${t}`];
+      });
+    }
+
+    RATE_CATEGORIES.forEach((c) => {
+      body[`${c}_metro_sat_night_rate`] = body[`${c}_metro_sat_day_rate`];
+      body[`${c}_reg_sat_night_rate`] = body[`${c}_reg_sat_day_rate`];
+      body[`${c}_metro_sun_night_rate`] = body[`${c}_metro_sun_day_rate`];
+      body[`${c}_reg_sun_night_rate`] = body[`${c}_reg_sun_day_rate`];
+      body[`${c}_metro_pub_holi_night_rate`] = body[`${c}_metro_pub_holi_day_rate`];
+      body[`${c}_reg_pub_holi_night_rate`] = body[`${c}_reg_pub_holi_day_rate`];
+
+      TIME_KEYS.forEach((t) => {
+        const k = `${c}_${t}`;
+        if (body[k] !== "" && body[k] !== undefined) body[k] = Number(body[k]);
+      });
+    });
+
+    if (isContractor) {
+      body.position = "full_time";
+      delete body.ot_base_rate;
+    } else {
+      delete body.user_id;
+    }
+
+    delete body.name;
+    delete body.rate;
+    delete body.user;
+
+    const res = await submit(updateEndpoint, body, { method: "POST" });
+    if (res === undefined) return;
+
+    if (res?.success) {
+      toast.success("Rate updated successfully!");
+      closeEditModal();
+      await refetch(listEndpoint);
+    } else {
+      toast.error(res?.message || "Update failed");
+    }
+  };
+
+  const rows = Array.isArray(data?.data)
+    ? data.data
+    : Array.isArray(data)
+      ? data
+      : [];
+
+  const stateOptions = isContractor
+    ? CONTRACTOR_STATES
+    : (isCharge || isPayRate)
+      ? CHARGE_STATES
+      : ALL_STATES;
+
+  // FIXED: Compare as strings to prevent strict-equality mismatch 
+  // (e.g., API string "535" vs contractorOptions integer 535)
+  const selectedContractorValue = useMemo(() => {
+    if (!isContractor || !form.user_id) return null;
+    return contractorOptions.find((opt) => String(opt.value) === String(form.user_id)) || null;
+  }, [isContractor, contractorOptions, form.user_id]);
+
+  if (!isAdmin) {
+    return (
+      <div
+        className="min-h-screen bg-[#f8fafc] d-flex align-items-center justify-content-center"
+        style={{ minHeight: "100vh" }}
+      >
+        <div className="text-center">
+          <h3 className="text-danger fw-bold mb-3">Access Denied</h3>
+          <p className="text-muted">
+            Only administrators can access rates management.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading && listEndpoint) return <Loader />;
+
+  if ((error && listEndpoint) || (isContractor && contractorsError && false)) {
+    const errMsg =
+      typeof error === "string"
+        ? error
+        : error?.message || JSON.stringify(error) ||
+        (typeof contractorsError === "string"
+          ? contractorsError
+          : contractorsError?.message) ||
+        "An error occurred";
+    return (
+      <div
+        className="min-h-screen bg-[#f8fafc] d-flex align-items-center justify-content-center"
+        style={{ minHeight: "100vh" }}
+      >
+        <div className="text-center">
+          <div className="fw-bold text-danger mb-2">Error</div>
+          <div className="small text-muted text-break">{errMsg}</div>
+          <button
+            className="btn btn-sm btn-teal mt-3"
+            onClick={() => refetch(listEndpoint)}
+          >
+            <i className="fa fa-refresh me-1"></i> Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="container-fluid p-3 p-md-4"
+      style={{ minHeight: "100vh" }}
+    >
+      <style>{`
+        :root {
+          --navy-950: #0a1930;
+          --navy-900: #0e2340;
+          --teal: #0A7C6E;
+          --teal-dark: #075e53;
+          --teal-tint: #f0fdf9;
+          --teal-border: #d1fae5;
+          --amber: #d97706;
+          --success: #16a34a;
+          --purple: #7c3aed;
+          --ink: #0f172a;
+          --slate: #1e293b;
+          --muted: #64748b;
+          --faint: #94a3b8;
+          --line: #e2e8f0;
+          --line-soft: #f1f5f9;
+          --surface: #ffffff;
+        }
+
+        .rates-hero {
+          position: relative;
+          background: linear-gradient(135deg, var(--navy-950) 0%, var(--navy-900) 65%, #0f2f52 100%);
+          border-radius: 22px;
+          padding: 34px 36px 46px;
+          overflow: hidden;
+          isolation: isolate;
+          margin-bottom: 1.5rem;
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: space-between;
+          align-items: flex-start;
+        }
+        .rates-hero::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background-image: radial-gradient(rgba(255,255,255,0.10) 1px, transparent 1px);
+          background-size: 22px 22px;
+          opacity: 0.35;
+          z-index: -1;
+          pointer-events: none;
+        }
+        .rates-hero::after {
+          content: "";
+          position: absolute;
+          top: -60px;
+          right: -60px;
+          width: 260px;
+          height: 260px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(10,124,110,0.45) 0%, rgba(10,124,110,0) 70%);
+          z-index: -1;
+          pointer-events: none;
+        }
+        .rates-hero-eyebrow {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.6px;
+          text-transform: uppercase;
+          color: #6ee7d8;
+          margin-bottom: 10px;
+        }
+        .rates-hero-eyebrow .dot {
+          width: 7px; height: 7px; border-radius: 50%;
+          background: #34d399;
+          box-shadow: 0 0 0 4px rgba(52,211,153,0.18);
+        }
+        .rates-hero h1 {
+          color: #fff;
+          font-size: 28px;
+          font-weight: 800;
+          letter-spacing: -0.4px;
+          margin: 0 0 6px;
+        }
+        .rates-hero p {
+          color: rgba(255,255,255,0.62);
+          font-size: 14px;
+          margin: 0;
+          text-transform: none;
+        }
+
+        .rates-hero .btn-add {
+          margin-top: 10px;
+          background: #0A7C6E;
+          border: none;
+          color: #fff;
+          font-weight: 600;
+          padding: 10px 24px;
+          border-radius: 12px;
+          transition: all 0.2s;
+          white-space: nowrap;
+        }
+        .rates-hero .btn-add:hover {
+          background: #075e53;
+          transform: translateY(-1px);
+          box-shadow: 0 8px 20px rgba(10,124,110,0.3);
+        }
+
+        .rates-table-card {
+          background: #fff;
+          border-radius: 18px;
+          box-shadow: 0 10px 25px -8px rgba(15,23,42,0.08);
+          border: 1px solid var(--line-soft);
+          overflow: hidden;
+        }
+
+        .table-premium {
+          margin-bottom: 0;
+        }
+
+        /* ── Tabs ── */
+        .rate-tabs { display: inline-flex; background: #e2e8f0; border-radius: 12px; padding: 6px; gap: 6px; box-shadow: inset 0 2px 4px rgba(15,23,42,0.05); }
+        .rate-tab { position: relative; border: none; background: transparent; padding: 10px 24px; border-radius: 8px; font-weight: 700; font-size: 14px; color: var(--muted); transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; outline: none; user-select: none; }
+        .rate-tab:hover:not(.active) { color: var(--ink); background: rgba(255,255,255,0.4); }
+        .rate-tab:active { transform: scale(0.96); }
+        .rate-tab.active { background: var(--surface); color: var(--teal-dark); box-shadow: 0 4px 12px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.04); }
+        .table-premium thead th {
+          background: #f8fafc;
+          border-bottom: 2px solid var(--teal);
+          font-size: 0.78rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          color: var(--faint);
+          padding: 14px 16px;
+        }
+        .table-premium tbody td {
+          padding: 14px 16px;
+          font-size: 0.9rem;
+          border-color: var(--line-soft);
+          vertical-align: middle;
+        }
+        .table-premium tbody tr:hover td {
+          background: #f0fdf9;
+        }
+
+        .action-btn {
+          width: 34px;
+          height: 34px;
+          border-radius: 10px;
+          background: #f1f5f9;
+          border: none;
+          color: var(--slate);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s;
+        }
+        .action-btn:hover {
+          background: #e2e8f0;
+          color: var(--teal);
+        }
+
+        .badge-premium {
+          padding: 5px 14px;
+          border-radius: 20px;
+          font-weight: 600;
+          font-size: 0.75rem;
+          background: rgba(10,124,110,0.08);
+          color: var(--teal);
+          border: 1px solid rgba(10,124,110,0.2);
+        }
+
+        .modal-overlay-premium {
+          position: fixed;
+          inset: 0;
+          background: rgba(10,20,35,0.62);
+          backdrop-filter: blur(3px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 9999;
+          padding: 20px;
+          animation: overlayFadeIn 0.18s ease-out;
+          overscroll-behavior: contain;
+        }
+        @keyframes overlayFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        .modal-content-premium {
+          background: #fff;
+          border-radius: 18px;
+          box-shadow: 0 30px 60px -18px rgba(10,25,48,0.5);
+          overflow: hidden;
+          max-height: 90vh;
+          display: flex;
+          flex-direction: column;
+        }
+        .modal-pop-in {
+          animation: modalPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes modalPopIn {
+          from { opacity: 0; transform: scale(0.97) translateY(6px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .modal-header-premium {
+          background: linear-gradient(120deg, var(--navy-950), var(--navy-900) 70%, #10345a);
+          position: relative;
+          overflow: hidden;
+        }
+        .modal-header-premium::after {
+          content: "";
+          position: absolute;
+          top: -30px;
+          right: -30px;
+          width: 120px;
+          height: 120px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(10,124,110,0.5), transparent 70%);
+          pointer-events: none;
+          z-index: 0;
+        }
+        .modal-header-premium h5 {
+          position: relative;
+          z-index: 1;
+        }
+        .modal-close-btn {
+          position: relative;
+          z-index: 2;
+          flex-shrink: 0;
+          width: 34px;
+          height: 34px;
+          border-radius: 50%;
+          border: none;
+          background: rgba(255,255,255,0.08);
+          color: #fff;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 14px;
+          cursor: pointer;
+          transition: background 0.15s ease, transform 0.15s ease;
+        }
+        .modal-close-btn:hover {
+          background: rgba(255,255,255,0.18);
+          transform: rotate(90deg);
+        }
+        .modal-close-btn:focus-visible {
+          outline: 2px solid #6ee7d8;
+          outline-offset: 2px;
+        }
+
+        .clean-input:focus {
+          border-color: var(--teal);
+          box-shadow: 0 0 0 1px var(--teal);
+        }
+
+        /* ── Request Tabs ── */
+        .req-tab-bar {
+          display: flex;
+          gap: 0;
+          border-bottom: 2px solid var(--line);
+          padding: 0 24px;
+          background: #fff;
+        }
+        .req-tab-btn {
+          padding: 13px 20px;
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--muted);
+          border: none;
+          background: transparent;
+          cursor: pointer;
+          border-bottom: 3px solid transparent;
+          margin-bottom: -2px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          transition: color 0.18s;
+        }
+        .req-tab-btn:hover { color: var(--ink); }
+        .req-tab-btn.active { color: var(--teal); border-bottom-color: var(--teal); }
+        .req-tab-count {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 20px;
+          height: 20px;
+          border-radius: 30px;
+          font-size: 11px;
+          font-weight: 800;
+          padding: 0 6px;
+        }
+        .req-tab-count.pending { background: rgba(217,119,6,0.12); color: #d97706; }
+        .req-tab-count.approved { background: rgba(22,163,74,0.12); color: #16a34a; }
+        .req-tab-count.rejected { background: rgba(220,38,38,0.12); color: #dc2626; }
+        .req-tab-count.all { background: rgba(10,124,110,0.1); color: var(--teal); }
+
+        @media (max-width: 767.98px) {
+          .rates-hero {
+            padding: 26px 20px 40px;
+            border-radius: 18px;
+          }
+          .rates-hero h1 { font-size: 22px; }
+          .req-tab-bar { padding: 0 12px; }
+          .req-tab-btn { padding: 10px 12px; font-size: 12px; }
+        }
+      `}</style>
+
+      <div className="rates-hero">
+        <div>
+          <span className="rates-hero-eyebrow">
+            <span className="dot"></span> Configuration
+          </span>
+          <h1>{title}</h1>
+          <p style={{ textTransform: "none" }}>
+            {isContractor
+              ? "View Resource Partner charge rates. Approve or reject rate adjustment requests below."
+              : isCharge
+                ? "View and edit charge rates by job level and state."
+                : "View and edit pay rates by job level and state."}
+          </p>
+        </div>
+      </div>
+
+      {/* Rates Table — hidden in contractor mode (admin sees requests panel only) */}
+      {!isContractor && (
+        <div className="rates-table-card">
+          <div className="table-responsive">
+            <table className="table table-premium align-middle">
+              <thead>
+                <tr>
+                  <th>{firstColumn}</th>
+                  <th>{isCharge ? "Level & Included Job Types" : "Level"}</th>
+                  <th>State</th>
+                  <th className="text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="text-center py-5 text-muted">No rates available</td>
+                  </tr>
+                )}
+                {rows.map((r) => {
+                  const lvlNum = String(r.level || "").replace(/\D/g, "");
+                  const lvlDef = JOB_LEVEL_DEFINITIONS[lvlNum];
+                  const formattedTitle = (isCharge || isPayRate)
+                    ? (r.title && r.title.toLowerCase().includes(isCharge ? "charge rate" : "pay rate")
+                        ? r.title
+                        : lvlNum
+                          ? `Level ${lvlNum} ${isCharge ? "Charge Rate" : "Pay Rate"}`
+                          : r.title || r.name || (isCharge ? "Charge Rate" : "Pay Rate"))
+                    : (r.title || r.name);
+
+                  return (
+                    <tr key={r.id}>
+                      <td>
+                        <div className="fw-bold text-dark">{formattedTitle}</div>
+                        <small className="text-muted">{isCharge ? "Client charge" : "Staff pay"}</small>
+                      </td>
+                      <td>
+                        <div className="d-flex align-items-center gap-2 mb-1">
+                          <span className="badge-premium">
+                            Level {lvlNum || r.level}
+                          </span>
+                        </div>
+                        {isCharge && lvlDef && (
+                          <div className="text-muted small" style={{ fontSize: "0.78rem", maxWidth: "360px", lineHeight: "1.35" }}>
+                            {lvlDef.roles.join(" • ")}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <div className="d-flex flex-wrap gap-1">
+                          {String(r.state || "")
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter(Boolean)
+                            .map((st, idx) => (
+                              <span key={idx} className="badge-premium">
+                                {STATE_NAME_MAP[st] || STATE_NAME_MAP[st.toUpperCase()] || st}
+                              </span>
+                            ))}
+                          {!r.state && <span className="text-muted">—</span>}
+                        </div>
+                      </td>
+                      <td className="text-center">
+                        <div className="d-flex align-items-center justify-content-center gap-2">
+                          <button
+                            type="button"
+                            className="action-btn"
+                            onClick={() => handleViewOpen(r)}
+                            title="View Rate Details"
+                          >
+                            <i className="fa fa-eye" />
+                          </button>
+                          <button
+                            type="button"
+                            className="action-btn"
+                            onClick={() => handleEditOpen(r, false)}
+                            title="Edit Rate"
+                          >
+                            <i className="fa fa-edit" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Rate Requests (contractor mode only) ── */}
+      {isContractor && (() => {
+        return (
+          <div className="mt-4">
+
+            {/* Tab bar */}
+            <div className="rate-tabs mb-4">
+              {[
+                { key: "approved", label: "Approved", icon: "fa-check" },
+                { key: "rejected", label: "Rejected", icon: "fa-times" },
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`rate-tab ${requestTab === tab.key ? "active" : ""}`}
+                  onClick={() => setRequestTab(tab.key)}
+                >
+                  <i className={`fa ${tab.icon} me-2`}></i>{tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Partner card grid */}
+            {requestsLoading ? (
+              <div className="text-center py-5">
+                <i className="fa fa-spinner fa-spin text-muted fs-4"></i>
+              </div>
+            ) : rateRequests.length === 0 ? (
+              <div className="rates-table-card">
+                <div className="text-center py-5">
+                  <i
+                    className={`fa ${requestTab === "approved" ? "fa-check-circle" : "fa-times-circle"} fa-2x mb-3 d-block`}
+                    style={{
+                      color: requestTab === "approved" ? "#0A7C6E" : "#dc2626",
+                    }}
+                  ></i>
+                  <div className="fw-bold text-dark mb-1">
+                    No {requestTab.charAt(0).toUpperCase() + requestTab.slice(1)} Requests
+                  </div>
+                  <div className="text-muted small">
+                    {requestTab === "approved"
+                      ? "No requests have been approved yet."
+                      : "No requests have been rejected."}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                  gap: "24px",
+                  alignItems: "start",
+                }}
+              >
+                {groupedRequests.map((group) => {
+                  const initials = getInitials(group.partnerName);
+                  const approvedCount = group.requests.filter(r => r.status === "approved").length;
+                  const rejectedCount = group.requests.filter(r => r.status === "rejected").length;
+                  const total = group.requests.length;
+
+                  /* colour palette per tab */
+                  const folderColor = requestTab === "approved"
+                    ? { tab: "#0A7C6E", body: "#f0fdf9", border: "#a7f3d0", text: "#065f46" }
+                    : { tab: "#ef4444", body: "#fff5f5", border: "#fecaca", text: "#991b1b" };
+
+                  return (
+                    <div
+                      key={group.key}
+                      onClick={() => setSelectedPartner(group)}
+                      style={{ cursor: "pointer", position: "relative" }}
+                      onMouseEnter={e => { e.currentTarget.querySelector(".folder-body").style.transform = "translateY(-3px)"; e.currentTarget.querySelector(".folder-body").style.boxShadow = `0 16px 32px -8px rgba(15,23,42,0.18)`; }}
+                      onMouseLeave={e => { e.currentTarget.querySelector(".folder-body").style.transform = "translateY(0)"; e.currentTarget.querySelector(".folder-body").style.boxShadow = `0 6px 18px -4px rgba(15,23,42,0.1)`; }}
+                    >
+                      {/* ── Folder Tab (ear) ── */}
+                      <div style={{
+                        position: "relative",
+                        display: "flex",
+                        alignItems: "flex-end",
+                        height: "22px",
+                        marginBottom: "-1px",
+                        zIndex: 1,
+                      }}>
+                        <div style={{
+                          width: "42%",
+                          height: "100%",
+                          background: folderColor.tab,
+                          borderRadius: "8px 8px 0 0",
+                          border: `1.5px solid ${folderColor.border}`,
+                          borderBottom: "none",
+                          display: "flex",
+                          alignItems: "center",
+                          paddingLeft: "10px",
+                          gap: "5px",
+                        }}>
+                          <i className="fa fa-folder-open" style={{ fontSize: "11px", color: "#fff", opacity: 0.9 }} />
+                          <span style={{ fontSize: "10px", fontWeight: 800, color: "#fff", letterSpacing: "0.3px", opacity: 0.9, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", maxWidth: "70px" }}>
+                            {group.partnerName.split(" ")[0]}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* ── Folder Body ── */}
+                      <div
+                        className="folder-body"
+                        style={{
+                          background: folderColor.body,
+                          border: `1.5px solid ${folderColor.border}`,
+                          borderRadius: "0 10px 10px 10px",
+                          padding: "18px 18px 16px",
+                          transition: "transform 0.22s ease, box-shadow 0.22s ease",
+                          boxShadow: "0 6px 18px -4px rgba(15,23,42,0.1)",
+                          position: "relative",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {/* Avatar row */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "14px" }}>
+                          <div style={{
+                            width: 44, height: 44, borderRadius: "50%",
+                            background: folderColor.tab,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            color: "#fff", fontWeight: 800, fontSize: "15px", flexShrink: 0,
+                            boxShadow: `0 4px 10px -2px ${folderColor.tab}66`,
+                          }}>
+                            {initials}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "13.5px", lineHeight: 1.3, wordBreak: "break-word" }}>
+                              {group.partnerName}
+                            </div>
+                            {group.partnerCompany && (
+                              <div style={{ fontSize: "11.5px", color: "#64748b", marginTop: "2px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                                {group.partnerCompany}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Divider */}
+                        <div style={{ height: "1px", background: folderColor.border, marginBottom: "12px" }} />
+
+                        {/* Stats row */}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                            {approvedCount > 0 && (
+                              <span style={{ fontSize: "11px", fontWeight: 700, color: "#065f46", background: "rgba(10,124,110,0.12)", padding: "3px 9px", borderRadius: "20px", border: "1px solid rgba(10,124,110,0.25)" }}>
+                                {approvedCount}
+                              </span>
+                            )}
+                            {rejectedCount > 0 && (
+                              <span style={{ fontSize: "11px", fontWeight: 700, color: "#991b1b", background: "rgba(239,68,68,0.12)", padding: "3px 9px", borderRadius: "20px", border: "1px solid rgba(239,68,68,0.25)" }}>
+                                {rejectedCount}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "5px", color: folderColor.text, fontSize: "12px", fontWeight: 700, flexShrink: 0 }}>
+                            <i className="fa fa-file-alt" style={{ fontSize: "11px" }} />
+                            {total}
+                          </div>
+                        </div>
+
+                        {/* Open hint */}
+                        <div style={{
+                          marginTop: "12px",
+                          fontSize: "11px", fontWeight: 600, color: folderColor.tab,
+                          display: "flex", alignItems: "center", gap: "5px",
+                          opacity: 0.75,
+                        }}>
+                          <i className="fa fa-arrow-right" style={{ fontSize: "10px" }} />
+                          Click to open
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── Partner Detail Modal ── */}
+      {selectedPartner && (
+        <div
+          className="modal-overlay-premium"
+          onClick={() => setSelectedPartner(null)}
+          style={{ zIndex: 9998 }}
+        >
+          <div
+            className="modal-content-premium modal-pop-in w-100"
+            style={{ maxWidth: "860px", maxHeight: "92vh" }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="modal-header-premium d-flex justify-content-between align-items-center px-4 py-3">
+              <div className="d-flex align-items-center gap-3">
+                <div style={{
+                  width: 40, height: 40, borderRadius: "10px",
+                  background: "rgba(255,255,255,0.15)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "#fff", fontWeight: 800, fontSize: "14px", flexShrink: 0,
+                }}>
+                  {getInitials(selectedPartner.partnerName)}
+                </div>
+                <div>
+                  <h5 className="text-white fw-bold mb-0" style={{ fontSize: "16px" }}>
+                    {selectedPartner.partnerName}
+                  </h5>
+                  {selectedPartner.partnerCompany && (
+                    <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "12px" }}>
+                      {selectedPartner.partnerCompany}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <ModalCloseButton onClick={() => setSelectedPartner(null)} />
+            </div>
+
+            {/* Modal body — request list */}
+            <div className="flex-grow-1 overflow-auto" style={{ background: "#f8fafc" }}>
+              <div style={{ padding: "20px" }}>
+
+                {/* Sub-header labels */}
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 130px 100px 130px",
+                  gap: "12px",
+                  padding: "6px 16px",
+                  marginBottom: "6px",
+                  fontSize: "10px", fontWeight: 800, textTransform: "uppercase",
+                  letterSpacing: "0.6px", color: "#94a3b8",
+                }}>
+                  <span>Title / State</span>
+                  <span>{requestTab === "approved" ? "Approved Date" : requestTab === "rejected" ? "Rejected Date" : "Date"}</span>
+                  <span>Status</span>
+                  <span style={{ textAlign: "center" }}>Actions</span>
+                </div>
+
+                {selectedPartner.requests.map((req) => {
+                  const isApproved = req.status === "approved";
+                  const primaryDate =
+                    requestTab === "approved"
+                      ? (req.reviewed_at || req.updated_at || req.created_at)
+                      : (req.updated_at || req.reviewed_at || req.created_at);
+
+                  return (
+                    <div
+                      key={req.id}
+                      style={{
+                        background: "#fff",
+                        borderRadius: "12px",
+                        border: "1px solid #e2e8f0",
+                        padding: "14px 16px",
+                        marginBottom: "10px",
+                        display: "grid",
+                        gridTemplateColumns: "1fr 130px 100px 130px",
+                        gap: "12px",
+                        alignItems: "center",
+                        borderLeft: isApproved ? "3px solid #0A7C6E" : "3px solid #dc2626",
+                      }}
+                    >
+                      {/* Title + state */}
+                      <div>
+                        <div className="fw-semibold text-dark" style={{ fontSize: "13.5px" }}>
+                          {req.title || req.rate?.title || "Rate Adjustment"}
+                        </div>
+                        <small className="text-muted">{STATE_NAME_MAP[req.state] || req.state || ""}</small>
+                      </div>
+
+                      {/* Date */}
+                      <div className="text-muted" style={{ fontSize: "12.5px" }}>
+                        <div className="fw-semibold text-dark">
+                          {primaryDate
+                            ? new Date(primaryDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })
+                            : "—"}
+                        </div>
+                        {req.created_at && primaryDate && new Date(req.created_at).toDateString() !== new Date(primaryDate).toDateString() && (
+                          <div style={{ fontSize: "11px", color: "#94a3b8" }}>
+                            Sub: {new Date(req.created_at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Status badge */}
+                      <div>
+                        {isApproved ? (
+                          <span style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: 700, background: "rgba(22,163,74,0.1)", color: "#16a34a", border: "1px solid rgba(22,163,74,0.2)" }}>
+                            Approved
+                          </span>
+                        ) : (
+                          <span style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: 700, background: "rgba(220,38,38,0.1)", color: "#dc2626", border: "1px solid rgba(220,38,38,0.2)" }}>
+                            Rejected
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                        <button
+                          className="action-btn"
+                          title="View Request Details"
+                          onClick={() => setReviewRequest({ request: req, mode: "view" })}
+                        >
+                          <i className="fa fa-eye" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal footer */}
+            <div className="bg-white border-top px-4 py-3 d-flex justify-content-between align-items-center">
+              <span className="text-muted small">
+                {selectedPartner.requests.length} request{selectedPartner.requests.length !== 1 ? "s" : ""} total
+              </span>
+              <button
+                className="btn btn-light px-5 rounded-pill fw-bold border"
+                onClick={() => setSelectedPartner(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Review / Reject Modal ── */}
+      {reviewRequest && (
+        <div
+          className="modal-overlay-premium"
+          onClick={() => setReviewRequest(null)}
+          style={{ zIndex: 9999 }}
+        >
+          <div
+            className="modal-content-premium modal-pop-in w-100"
+            style={{ maxWidth: "860px", maxHeight: "92vh" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="modal-header-premium d-flex justify-content-between align-items-center px-4 py-3">
+              <div>
+                <h5 className="text-white fw-bold mb-0">
+                  <i className={`fa ${reviewRequest.mode === "reject" ? "fa-times-circle" : "fa-file-alt"} me-2 opacity-75`}></i>
+                  {reviewRequest.mode === "reject" ? "Reject Rate Request" : "Review Rate Request"}
+                </h5>
+              </div>
+              <ModalCloseButton onClick={() => setReviewRequest(null)} />
+            </div>
+
+            {/* Body */}
+            <div className="flex-grow-1 overflow-auto p-4 bg-light">
+              {/* Contractor info banner */}
+              <div className="bg-white rounded-3 p-3 mb-4 shadow-sm border">
+                <div className="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-2">
+                </div>
+                <div className="d-flex flex-wrap gap-3 pt-2 border-top">
+                  {reviewRequest.request.title && (
+                    <div>
+                      <div className="text-muted" style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Rate Title { }</div>
+                      <div className="fw-bold text-dark" style={{ fontSize: "13px" }}>{reviewRequest.request.title} ( {STATE_NAME_MAP[reviewRequest.request.state] || reviewRequest.request.state || ""} )</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Reason from contractor */}
+              {reviewRequest.request.reason && (
+                <div className="bg-white rounded-3 p-3 mb-4 shadow-sm border">
+                  <h6 className="fw-bold text-dark mb-2 small text-uppercase" style={{ color: "#64748b", letterSpacing: "0.5px" }}>
+                    <i className="fa fa-comment-alt me-1" style={{ color: "#0A7C6E" }}></i> Resource Partner's Reason
+                  </h6>
+                  <p className="mb-0 text-dark" style={{ fontSize: "13.5px" }}>{reviewRequest.request.reason}</p>
+                </div>
+              )}
+
+              {/* Review Note */}
+              {(reviewRequest.request.review_note || reviewRequest.request.reviewNote) && (
+                <div className="bg-white rounded-3 p-3 mb-4 shadow-sm border">
+                  <h6 className="fw-bold text-dark mb-2 small text-uppercase" style={{ color: "#64748b", letterSpacing: "0.5px" }}>
+                    <i className="fa fa-sticky-note me-1" style={{ color: "#0A7C6E" }}></i> Review Note
+                  </h6>
+                  <p className="mb-0 text-dark" style={{ fontSize: "13.5px", whiteSpace: "pre-wrap" }}>
+                    {reviewRequest.request.review_note || reviewRequest.request.reviewNote}
+                  </p>
+                </div>
+              )}
+
+              {/* Proposed rates grid */}
+              <div className="row g-4">
+                {["def"].map((cat) => (
+                  <div className="col-12" key={cat}>
+                    <div className="bg-white rounded-3 p-4 shadow-sm border h-100">
+                      <h6 className="fw-bold text-dark mb-4 pb-2 border-bottom">
+                        <i className="fa fa-clock me-2" style={{ color: "#0A7C6E" }}></i>
+                        Resource Partner Rates
+                      </h6>
+                      <div
+                        className="d-none d-md-grid mb-3"
+                        style={{ gridTemplateColumns: "2fr 1.2fr 1.2fr", gap: "1rem", borderBottom: "2px solid #e2e8f0", paddingBottom: "0.75rem" }}
+                      >
+                        <div className="fw-bold text-muted small">Time Slot</div>
+                        <div className="fw-bold text-muted small">Metro ($)</div>
+                        <div className="fw-bold text-muted small">Regional ($)</div>
+                      </div>
+                      {UI_SLOT_ROWS.map((row) => {
+                        const req = reviewRequest.request;
+                        const mKey = `${cat}_${row.metro}`;
+                        const rKey = `${cat}_${row.reg}`;
+                        const metroVal = req[mKey] ?? req[row.metro] ?? req[`def_${row.metro}`];
+                        const regVal = req[rKey] ?? req[row.reg] ?? req[`def_${row.reg}`];
+                        return (
+                          <div
+                            key={row.metro}
+                            className="row g-3 mb-2 py-2 border-bottom border-light align-items-center"
+                          >
+                            <div className="col-12 col-md-5">
+                              <span className="small fw-semibold text-dark">{row.label}</span>
+                            </div>
+                            <div className="col-6 col-md-3">
+                              <span className="fw-bold" style={{ color: "#0A7C6E" }}>
+                                {metroVal !== undefined && metroVal !== null && metroVal !== "" ? `$${Number(metroVal).toFixed(2)}` : <span className="text-muted">—</span>}
+                              </span>
+                            </div>
+                            <div className="col-6 col-md-3">
+                              <span className="fw-bold text-dark">
+                                {regVal !== undefined && regVal !== null && regVal !== "" ? `$${Number(regVal).toFixed(2)}` : <span className="text-muted">—</span>}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Resource Partner Acknowledgement & Digital Signature */}
+              <div className="bg-white rounded-3 p-4 mt-4 shadow-sm border">
+                <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3 pb-2 border-bottom">
+                  <div className="d-flex align-items-center gap-2">
+                    <i className="fa-solid fa-file-signature fs-5" style={{ color: "#0A7C6E" }}></i>
+                    <h6 className="fw-bold text-dark mb-0">Resource Partner Acknowledgement &amp; Digital Signature</h6>
+                  </div>
+                  <span className="badge rounded-pill px-3 py-2 bg-success bg-opacity-10 text-success border border-success border-opacity-25" style={{ fontSize: "11.5px", fontWeight: 700 }}>
+                    <i className="fa-solid fa-circle-check me-1"></i> Pre-Acknowledged &amp; Signed
+                  </span>
+                </div>
+
+                <div className="row g-3 align-items-center">
+                  <div className="col-12 col-md-7">
+                    <div className="mb-2">
+                      <span className="text-muted small fw-bold text-uppercase d-block" style={{ fontSize: "10.5px", letterSpacing: "0.5px" }}>Signatory Legal Name</span>
+                      <span className="fw-bold text-dark" style={{ fontSize: "14px" }}>
+                        {reviewRequest.request.signature_name || reviewRequest.request.contractor_name || reviewRequest.request.user?.name || "Authorized Representative"}
+                      </span>
+                    </div>
+
+                    <div className="mb-2">
+                      <span className="text-muted small fw-bold text-uppercase d-block" style={{ fontSize: "10.5px", letterSpacing: "0.5px" }}>Agreement &amp; Terms Status</span>
+                      <span className="small text-secondary">
+                        <i className="fa-solid fa-check-double text-success me-1"></i>
+                        Acknowledged proposed rates and agreed to Resource Partner Terms &amp; Conditions upon request submission.
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-muted small fw-bold text-uppercase d-block" style={{ fontSize: "10.5px", letterSpacing: "0.5px" }}>Timestamp</span>
+                      <span className="small text-muted">
+                        {reviewRequest.request.signed_at || reviewRequest.request.acknowledged_at || reviewRequest.request.created_at
+                          ? new Date(reviewRequest.request.signed_at || reviewRequest.request.acknowledged_at || reviewRequest.request.created_at).toLocaleString("en-AU", {
+                              day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"
+                            })
+                          : "Recorded upon request submission"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="col-12 col-md-5">
+                    <span className="text-muted small fw-bold text-uppercase d-block mb-1" style={{ fontSize: "10.5px", letterSpacing: "0.5px" }}>Digital Signature</span>
+                    <div
+                      className="p-3 bg-light rounded-3 border text-center d-flex align-items-center justify-content-center"
+                      style={{ minHeight: "95px", maxHeight: "120px", overflow: "hidden" }}
+                    >
+                      {reviewRequest.request.signature_image || reviewRequest.request.signature ? (
+                        <img
+                          src={resolveSignatureUrl(reviewRequest.request.signature_image || reviewRequest.request.signature)}
+                          alt="Contractor Signature"
+                          style={{ maxHeight: "80px", maxWidth: "100%", objectFit: "contain" }}
+                        />
+                      ) : (
+                        <span style={{ fontFamily: "'Dancing Script', cursive, serif", fontSize: "28px", color: "#1e293b", fontWeight: 700 }}>
+                          {reviewRequest.request.signature_name || reviewRequest.request.contractor_name || reviewRequest.request.user?.name || "Acknowledged"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Reject note input */}
+              {reviewRequest.mode === "reject" && (
+                <div className="bg-white rounded-3 p-3 mt-4 shadow-sm border">
+                  <label className="form-label fw-bold small text-dark mb-1">
+                    <i className="fa fa-exclamation-triangle me-1 text-danger"></i> Rejection Reason (optional)
+                  </label>
+                  <textarea
+                    rows={3}
+                    className="form-control clean-input"
+                    placeholder="Add a note to the Resource Partner about why this request was rejected..."
+                    value={reviewNote}
+                    onChange={(e) => setReviewNote(e.target.value)}
+                    style={{ fontSize: "13.5px" }}
+                  ></textarea>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="bg-white border-top px-4 py-3 d-flex justify-content-between align-items-center">
+              <button
+                className="btn btn-light px-4 rounded-pill fw-bold border"
+                onClick={() => setReviewRequest(null)}
+              >
+                Close
+              </button>
+              {(!reviewRequest.request.status || reviewRequest.request.status === "pending") && (
+                <div className="d-flex gap-2">
+                  {reviewRequest.mode !== "reject" ? (
+                    <>
+                      <button
+                        className="btn rounded-pill fw-bold px-4"
+                        style={{ background: "rgba(220,38,38,0.08)", color: "#dc2626", border: "1.5px solid rgba(220,38,38,0.2)" }}
+                        onClick={() => setReviewRequest({ ...reviewRequest, mode: "reject" })}
+                        disabled={processingRequestId === reviewRequest.request.id}
+                      >
+                        <i className="fa fa-times me-2"></i>Reject
+                      </button>
+                      <button
+                        className="btn px-5 rounded-pill fw-bold text-white shadow"
+                        style={{ background: "linear-gradient(135deg, #0A7C6E, #0b9b8a)", border: "none" }}
+                        onClick={() => handleApproveRequest(reviewRequest.request)}
+                        disabled={processingRequestId === reviewRequest.request.id}
+                      >
+                        {processingRequestId === reviewRequest.request.id
+                          ? <><i className="fa fa-spinner fa-spin me-2"></i>Approving...</>
+                          : <><i className="fa fa-check me-2"></i>Approve Request</>}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="btn px-5 rounded-pill fw-bold text-white shadow"
+                      style={{ background: "linear-gradient(135deg, #dc2626, #b91c1c)", border: "none" }}
+                      onClick={() => handleRejectRequest(reviewRequest.request)}
+                      disabled={processingRequestId === reviewRequest.request.id}
+                    >
+                      {processingRequestId === reviewRequest.request.id
+                        ? <><i className="fa fa-spinner fa-spin me-2"></i>Rejecting...</>
+                        : <><i className="fa fa-times me-2"></i>Confirm Rejection</>}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal — only for non-contractor rates */}
+      {showEditModal && !isContractor && (
+        <div className="modal-overlay-premium" onClick={closeEditModal}>
+          <div
+            className="modal-content-premium modal-pop-in w-100"
+            style={{ maxWidth: "1400px", maxHeight: "92vh" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header-premium d-flex justify-content-between align-items-center px-4 py-3">
+              <div>
+                <h5 className="text-white fw-bold mb-0">
+                  <i
+                    className={`fa ${isViewMode ? "fa-eye" : "fa-pen-to-square"} me-2 opacity-75`}
+                  ></i>
+                  {isViewMode
+                    ? (isCharge ? "View Charge Rate Details" : isPayRate ? "View Pay Rate Details" : "View Rate Details")
+                    : (isCharge ? "Edit Charge Rate Details" : isPayRate ? "Edit Pay Rate Details" : "Edit Rate Details")}
+                </h5>
+              </div>
+              <ModalCloseButton onClick={closeEditModal} />
+            </div>
+
+            <div className="flex-grow-1 overflow-auto p-4 bg-light">
+              <form id="rateForm" onSubmit={handleEditSubmit}>
+                {/* General Information */}
+                <div className="bg-white rounded-3 p-4 mb-4 shadow-sm border">
+                  <h6 className="fw-bold text-dark mb-4 pb-2 border-bottom">
+                    <i
+                      className="fa fa-info-circle me-2"
+                      style={{ color: "#0A7C6E" }}
+                    ></i>{" "}
+                    General Information
+                  </h6>
+                  <div className="row g-3">
+                    <div className={!isPayRate && !isContractor ? "col-md-12" : "col-md-6"}>
+                      <label className="form-label small fw-bold text-muted">
+                        Title / Role Name *
+                      </label>
+                      <input
+                        id="title"
+                        value={form.title}
+                        onChange={handleFormChange}
+                        className="form-control clean-input"
+                        placeholder={isCharge ? "e.g. Level 1 Charge Rate" : isPayRate ? "e.g. Level 1 Pay Rate" : "Enter role title"}
+                        disabled={isViewMode}
+                        required
+                      />
+                    </div>
+                    {isPayRate && (
+                      <div className="col-md-6">
+                        <label className="form-label small fw-bold text-muted">
+                          Base Rate ($) *
+                        </label>
+                        <div className="input-group">
+                          <span className="input-group-text bg-white">
+                            <i className="fa fa-dollar-sign text-muted"></i>
+                          </span>
+                          <input
+                            id="ot_base_rate"
+                            type="number"
+                            step="0.01"
+                            value={form.ot_base_rate}
+                            onChange={handleFormChange}
+                            className="form-control clean-input"
+                            placeholder="Enter base rate"
+                            disabled={isViewMode}
+                            required
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Position / Category – hidden for contractor */}
+                    {!isContractor && (
+                      <div className="col-md-4">
+                        <label className="form-label small fw-bold text-muted">
+                          Position / Category
+                        </label>
+                        <select
+                          id="position"
+                          value={form.position}
+                          onChange={handleFormChange}
+                          className="form-select clean-input"
+                          disabled={isViewMode}
+                        >
+                          <option value="full_time">Full Time</option>
+                          <option value="casual">Casual</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Job Level / Contractor Selector */}
+                    {isContractor ? (
+                      <div className="col-md-4">
+                        <label className="form-label small fw-bold text-muted">
+                          Resource Partner *
+                        </label>
+                        <Select
+                          name="contractor"
+                          options={contractorOptions}
+                          value={selectedContractorValue}
+                          onChange={handleContractorChange}
+                          isDisabled={isViewMode}
+                          styles={selectStyles}
+                          className="basic-single-select"
+                          classNamePrefix="select"
+                          placeholder="Select Resource Partner..."
+                          noOptionsMessage={() => "No Resource Partners found"}
+                        />
+                      </div>
+                    ) : (isCharge || isPayRate) ? (
+                      <div className="col-md-4">
+                        <label className="form-label small fw-bold text-muted">
+                          Job Level *
+                        </label>
+                        <Select
+                          name="level"
+                          options={JOB_LEVEL_OPTIONS}
+                          value={
+                            JOB_LEVEL_OPTIONS.find(
+                              (opt) =>
+                                String(opt.value) ===
+                                String(form.level).replace(/\D/g, ""),
+                            ) || null
+                          }
+                          onChange={handleLevelSelectChange}
+                          isDisabled={isViewMode}
+                          styles={selectStyles}
+                          className="basic-single-select"
+                          classNamePrefix="select"
+                          placeholder="Select Job Level (1–5)..."
+                        />
+                      </div>
+                    ) : (
+                      <div className="col-md-4">
+                        <label className="form-label small fw-bold text-muted">
+                          Job Level
+                        </label>
+                        <input
+                          id="level"
+                          value={form.level}
+                          onChange={handleFormChange}
+                          className="form-control clean-input"
+                          placeholder="Enter job level"
+                          disabled={isViewMode}
+                        />
+                      </div>
+                    )}
+
+                    {/* State dropdown / Multi-select for Charge Rates and Pay Rates */}
+                    {(isCharge || isPayRate) ? (
+                      <div className="col-md-4">
+                        <label className="form-label small fw-bold text-muted">
+                          Location State * (Multi-Select)
+                        </label>
+                        <Select
+                          isMulti
+                          name="state"
+                          options={CHARGE_STATES}
+                          value={selectedChargeStates}
+                          onChange={handleChargeStatesChange}
+                          isDisabled={isViewMode}
+                          styles={selectStyles}
+                          className="basic-multi-select"
+                          classNamePrefix="select"
+                          placeholder="Select states..."
+                        />
+                      </div>
+                    ) : (
+                      <div className="col-md-4">
+                        <label className="form-label small fw-bold text-muted">
+                          Location State
+                        </label>
+                        <select
+                          id="state"
+                          value={form.state}
+                          onChange={handleFormChange}
+                          className="form-select clean-input"
+                          disabled={isViewMode}
+                          required
+                        >
+                          {stateOptions.map((s) => (
+                            <option key={s.value} value={s.value} disabled={s.disabled}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Included Roles for Job Level in Charge Mode */}
+                    {isCharge && (
+                      <div className="col-12 mt-3">
+                        <div className="p-3 rounded-3 bg-light border">
+                          <div className="d-flex align-items-center justify-content-between mb-2">
+                            <span className="fw-bold small text-dark">
+                              <i
+                                className="fa fa-layer-group me-2"
+                                style={{ color: "#0A7C6E" }}
+                              ></i>
+                              Roles included in Level {currentLevelNum} (selected during Job Post to calculate level):
+                            </span>
+                            <span
+                              className="badge fw-semibold"
+                              style={{
+                                fontSize: "0.75rem",
+                                background: "rgba(10,124,110,0.1)",
+                                color: "#0A7C6E",
+                                border: "1px solid rgba(10,124,110,0.25)",
+                              }}
+                            >
+                              Level {currentLevelNum}
+                            </span>
+                          </div>
+                          <div className="d-flex flex-wrap gap-2">
+                            {(selectedLevelDef?.roles || []).map((role, idx) => (
+                              <span
+                                key={idx}
+                                className="badge bg-white text-dark border px-2 py-1 fw-normal"
+                                style={{ fontSize: "0.8rem" }}
+                              >
+                                <i className="fa fa-check text-success me-1"></i> {role}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Rates Matrices */}
+                <div className="row g-4">
+                  {((isCharge || isPayRate) ? ["def"] : RATE_CATEGORIES).map((cat) => (
+                    <div className={(isCharge || isPayRate) ? "col-12" : "col-xl-6"} key={cat}>
+                      <div className="bg-white rounded-3 p-4 shadow-sm border h-100">
+                        <h6 className="fw-bold text-dark mb-4 pb-2 border-bottom text-capitalize">
+                          <i
+                            className={`fa ${cat === "def" ? "fa-clock" : "fa-briefcase"} me-2`}
+                            style={{ color: "#0A7C6E" }}
+                          ></i>
+                          {isCharge
+                            ? "Charge Rates"
+                            : isPayRate
+                              ? "Pay Rates"
+                              : cat === "def"
+                                ? "Resource Partner Rates"
+                                : "EBA Agreement Rates"}
+                        </h6>
+                        <div
+                          className="d-none d-md-grid mb-3"
+                          style={{
+                            gridTemplateColumns: "2fr 1.2fr 1.2fr",
+                            gap: "1.5rem",
+                            borderBottom: "2px solid #e2e8f0",
+                            paddingBottom: "0.75rem",
+                          }}
+                        >
+                          <div className="fw-bold text-muted small">
+                            Time Slot
+                          </div>
+                          <div className="fw-bold text-muted small">
+                            Metro Area ($)
+                          </div>
+                          <div className="fw-bold text-muted small">
+                            Regional Area ($)
+                          </div>
+                        </div>
+                        {UI_SLOT_ROWS.map((row) => {
+                          const metroId = `${cat}_${row.metro}`;
+                          const regId = `${cat}_${row.reg}`;
+                          return (
+                            <div
+                              key={metroId}
+                              className="row g-3 mb-3 mb-md-0 py-2 border-bottom border-light align-items-center"
+                            >
+                              <div className="col-12 col-md-5">
+                                <label className="form-label small fw-semibold text-dark mb-1">
+                                  {row.label}
+                                </label>
+                              </div>
+                              <div className="col-6 col-md-3">
+                                <div className="input-group input-group-sm">
+                                  <span className="input-group-text bg-white">
+                                    <i className="fa fa-dollar-sign text-muted small"></i>
+                                  </span>
+                                  <input
+                                    id={metroId}
+                                    type="number"
+                                    step="0.01"
+                                    value={form[metroId]}
+                                    onChange={handleFormChange}
+                                    className="form-control clean-input"
+                                    placeholder="Metro"
+                                    disabled={isViewMode}
+                                  />
+                                </div>
+                              </div>
+                              <div className="col-6 col-md-3">
+                                <div className="input-group input-group-sm">
+                                  <span className="input-group-text bg-white">
+                                    <i className="fa fa-dollar-sign text-muted small"></i>
+                                  </span>
+                                  <input
+                                    id={regId}
+                                    type="number"
+                                    step="0.01"
+                                    value={form[regId]}
+                                    onChange={handleFormChange}
+                                    className="form-control clean-input"
+                                    placeholder="Regional"
+                                    disabled={isViewMode}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </form>
+            </div>
+
+            <div className="bg-white border-top px-4 py-3 d-flex justify-content-end gap-2">
+              <button
+                type="button"
+                className="btn btn-light px-5 rounded-pill fw-bold border"
+                onClick={closeEditModal}
+              >
+                Close
+              </button>
+              {!isViewMode && (
+                <button
+                  type="submit"
+                  form="rateForm"
+                  className="btn btn-primary-custom px-5 rounded-pill fw-bold shadow"
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <span>
+                      <i className="fa fa-spinner fa-spin me-2"></i>Saving...
+                    </span>
+                  ) : (
+                    "Save Changes"
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};
+
+export default RatesList;

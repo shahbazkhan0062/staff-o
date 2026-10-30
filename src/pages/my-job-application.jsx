@@ -1,0 +1,2583 @@
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
+import { toast } from "react-toastify";
+import { startOfWeek, endOfWeek, format, parse, isValid } from "date-fns";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import useSubmit from "../hooks/useSubmit";
+import Loader from "../components/Loader";
+import SignInOutDetails from "../components/roster/SignInOutDetails";
+
+function combineDateAndTime(dateObj, timeValue) {
+  if (!dateObj || !timeValue) return null;
+  const parts = String(timeValue).split(":");
+  if (parts.length < 2) return null;
+  const merged = new Date(dateObj);
+  merged.setHours(Number(parts[0] || 0), Number(parts[1] || 0), 0, 0);
+  return isValid(merged) ? merged : null;
+}
+
+// ---------- Helper Components ----------
+
+const InfoRow = ({ label, value, icon, transform = true }) => {
+  const displayValue =
+    transform && value && typeof value === "string"
+      ? value.charAt(0).toUpperCase() + value.slice(1)
+      : value;
+  return (
+    <div className="info-row">
+      <span className="info-row-label">
+        {icon && <i className={`fa-solid ${icon} info-row-icon`}></i>}
+        {label}
+      </span>
+      <span className="info-row-value">
+        {transform ? (
+          displayValue || "N/A"
+        ) : (
+          <span style={{ textTransform: "none" }}>{value || "N/A"}</span>
+        )}
+      </span>
+    </div>
+  );
+};
+
+const getInitials = (name) => {
+  if (!name || name === "Unassigned") return "?";
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join("");
+};
+
+const DateField = ({ label, selected, onChange, placeholder, maxDate, minDate }) => (
+  <div className="date-field">
+    <span className="date-field-label">
+      <i className="fa-regular fa-calendar"></i> {label}
+    </span>
+    <DatePicker
+      selected={selected}
+      onChange={onChange}
+      dateFormat="dd/MM/yyyy"
+      className="form-control form-control-sm border-0 px-0 date-field-input"
+      wrapperClassName="w-100"
+      placeholderText={placeholder}
+      maxDate={maxDate}
+      minDate={minDate}
+    />
+  </div>
+);
+
+const formatAmount = (val) => {
+  if (val == null || val === "") return "";
+  const s = String(val).trim();
+  if (s.startsWith("$")) return s;
+  const n = Number(s);
+  return isNaN(n) ? `$${s}` : `$${n.toFixed(2)}`;
+};
+
+// ---------- Profile Image Component ----------
+const ProfileImage = ({ src, name, size = 36 }) => {
+  const [imgError, setImgError] = useState(false);
+  const initials = getInitials(name || "?");
+
+  if (src && !imgError) {
+    return (
+      <img
+        src={src}
+        alt={name || "Avatar"}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          objectFit: "cover",
+          border: "2px solid #fff",
+          boxShadow: "0 0 0 1px var(--line)",
+        }}
+        onError={() => setImgError(true)}
+      />
+    );
+  }
+
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        backgroundColor: "#e2e8f0",
+        color: "#94a3b8",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: size * 0.35,
+        fontWeight: 700,
+        border: "2px solid #fff",
+        boxShadow: "0 0 0 1px var(--line)",
+      }}
+    >
+      {initials}
+    </div>
+  );
+};
+
+// ---------- Smart Pagination helper ----------
+const getPageNumbers = (currentPage, totalPages) => {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+
+  const pages = [];
+  pages.push(1);
+
+  if (currentPage > 3) {
+    pages.push("...");
+  }
+
+  const start = Math.max(2, currentPage - 1);
+  const end = Math.min(totalPages - 1, currentPage + 1);
+  for (let i = start; i <= end; i++) {
+    pages.push(i);
+  }
+
+  if (currentPage < totalPages - 2) {
+    pages.push("...");
+  }
+
+  pages.push(totalPages);
+  return pages;
+};
+
+// ---------- Main Component ----------
+
+export default function MyJobApplications() {
+  const navigate = useNavigate();
+  const { userdata } = useSelector((state) => state.auth);
+  const { isExpanded } = useSelector((state) => state.sidebar);
+  const userId = userdata?.data?.id || userdata?.id;
+  const userType = userdata?.data?.user_type || userdata?.user_type;
+  const normalizedUserType = (userType || "").toString().toLowerCase();
+  const isClient =
+    normalizedUserType === "customer" ||
+    normalizedUserType === "client" ||
+    normalizedUserType === "employer";
+  const isAdmin = normalizedUserType === "admin";
+  const canManageJob = isAdmin || isClient;
+
+  const { submit, loading, data: submitData } = useSubmit({ isAuth: true });
+  const { submit: submitAction, loading: actionLoading } = useSubmit({ isAuth: true });
+
+  // Filters state – now defaults to current week (Monday to Sunday)
+  const [startDate, setStartDate] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [endDate, setEndDate] = useState(() => endOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    perPage: 15,
+    total: 0,
+    lastPage: 1,
+  });
+
+  // Modal states
+  const [selectedApp, setSelectedApp] = useState(null);
+  const [showPaymentAlertModal, setShowPaymentAlertModal] = useState(false);
+  const hasAutoOpenedPaymentModal = useRef(false);
+
+  // Edit & Delete modal states
+  const [editModalApp, setEditModalApp] = useState(null);
+  const [editForm, setEditForm] = useState({ date: null, startTime: "", endTime: "" });
+  const [deleteModalApp, setDeleteModalApp] = useState(null);
+  // Payment breakdown returned by api/update-roster-time when this change
+  // needs to be confirmed (with its payment impact shown) before it's applied.
+  const [editTimeBreakdown, setEditTimeBreakdown] = useState(null);
+  const [pendingEditPayload, setPendingEditPayload] = useState(null);
+
+  const fetchCustomerSites = useCallback(
+    (page = 1) => {
+      if (!userId || !startDate || !endDate) return;
+      const formattedStart = format(startDate, "MM-dd-yyyy");
+      const formattedEnd = format(endDate, "MM-dd-yyyy");
+      const payload = {
+        user_id: [userId],
+        start: formattedStart,
+        end: formattedEnd,
+        roster_id: "1",
+        page: page,
+      };
+      submit("api/job-details", payload, { method: "POST" });
+    },
+    [userId, startDate, endDate, submit]
+  );
+
+  useEffect(() => {
+    if (userId) {
+      setCurrentPage(1);
+      fetchCustomerSites(1);
+    }
+
+  }, [userId, fetchCustomerSites]);
+
+  useEffect(() => {
+    if (submitData?.pagination) {
+      setPagination({
+        currentPage: submitData.pagination.current_page,
+        perPage: submitData.pagination.per_page,
+        total: submitData.pagination.total,
+        lastPage: submitData.pagination.last_page,
+      });
+    }
+  }, [submitData]);
+
+  useEffect(() => {
+    if (!isClient) return;
+    if (submitData?.data && Array.isArray(submitData.data)) {
+      const hasWaitingJobs = submitData.data.some(
+        (shift) =>
+          shift.job_status?.toLowerCase() !== "confirmed" &&
+          shift.job_status?.toLowerCase() !== "completed" &&
+          shift.accepted_by != null &&
+          shift.accepted_by !== "null" &&
+          shift.payment_status !== "required" &&
+          Number(shift.contractor_invoice) !== 1
+      );
+      if (hasWaitingJobs && !hasAutoOpenedPaymentModal.current) {
+        setShowPaymentAlertModal(true);
+        hasAutoOpenedPaymentModal.current = true;
+      }
+    }
+  }, [submitData, isClient]);
+
+  const applications = useMemo(() => {
+    if (!submitData?.data) return [];
+    return submitData.data.map((shift) => {
+      let statusClass = "review";
+      let pillIcon = "fa-clock";
+      const currentStatus = shift.job_status
+        ? shift.job_status.toLowerCase()
+        : "pending";
+
+      if (currentStatus === "confirmed" || currentStatus === "completed") {
+        statusClass = "offer";
+        pillIcon = "fa-calendar-check";
+      } else if (currentStatus === "pending") {
+        statusClass = "review";
+        pillIcon = "fa-envelope-open-text";
+      }
+
+      let formattedTime = `${shift.start} - ${shift.end}`;
+      let formattedDate = "";
+      let shiftDate = "";
+      let timeWindow = "";
+      let startDisplay = shift.start || "N/A";
+      let endDisplay = shift.end || "N/A";
+      try {
+        const sDate = parse(shift.start, "yyyy-MM-dd HH:mm", new Date());
+        const eDate = parse(shift.end, "yyyy-MM-dd HH:mm", new Date());
+        if (!isNaN(sDate) && !isNaN(eDate)) {
+          formattedDate = format(sDate, "dd MMM yyyy");
+          shiftDate = format(sDate, "dd/MM/yyyy");
+          timeWindow = `${format(sDate, "HH:mm")} – ${format(eDate, "HH:mm")}`;
+          formattedTime = `${format(sDate, "dd/MM/yyyy HH:mm")} to ${format(eDate, "HH:mm")}`;
+          startDisplay = format(sDate, "dd MMM yyyy, HH:mm");
+          endDisplay = format(eDate, "dd MMM yyyy, HH:mm");
+        }
+      } catch (e) { }
+
+      let formattedCreatedAt = shift.created_at || "";
+      if (shift.created_at) {
+        try {
+          const cDate = new Date(shift.created_at);
+          if (!isNaN(cDate)) {
+            formattedCreatedAt = format(cDate, "dd/MM/yyyy HH:mm");
+          }
+        } catch (e) { }
+      }
+
+      // ── Document label mapping ──
+      const DOC_LABELS = {
+        working_with_children: "Working With Children Check",
+        white_card: "White Card",
+        msic_card: "MSIC Card",
+        control_room_certificate: "Control Room Certificate",
+        rsa_certificate: "RSA Certificate",
+      };
+
+      const parseDocArray = (raw) => {
+        if (!raw) return [];
+        if (Array.isArray(raw)) return raw;
+        if (typeof raw === "string") {
+          const trimmed = raw.trim();
+          if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+            try {
+              const p = JSON.parse(trimmed);
+              if (Array.isArray(p)) return p;
+            } catch (e) {}
+          }
+          if (trimmed.includes(",")) {
+            return trimmed.split(",").map((s) => s.trim()).filter(Boolean);
+          }
+          return [trimmed];
+        }
+        return [];
+      };
+
+      const rawDocList =
+        shift.document_types ||
+        shift.document_list ||
+        shift.documents ||
+        shift.required_documents ||
+        shift.rawShift?.document_types ||
+        shift.rawShift?.document_list ||
+        shift.site?.document_types ||
+        shift.site?.document_list;
+
+      const docArray = parseDocArray(rawDocList);
+      let documents = docArray
+        .map((item) => {
+          if (!item) return null;
+          const code =
+            typeof item === "string"
+              ? item
+              : item.document_type || item.code || item.name || item.document_name || String(item);
+          if (!code || typeof code !== "string") return null;
+          const cleanCode = code.trim().toLowerCase();
+          return DOC_LABELS[cleanCode] || code.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+        })
+        .filter(Boolean);
+
+      const rawContractor = shift.contractor || shift.rawShift?.contractor || null;
+      const contractorName =
+        rawContractor?.name ||
+        (rawContractor?.first_name
+          ? `${rawContractor.first_name} ${rawContractor.last_name || ""}`.trim()
+          : null) ||
+        rawContractor?.company_name ||
+        rawContractor?.business_name ||
+        null;
+
+      const isAcceptedByContractor = Boolean(
+        (shift.accepted_by != null &&
+          shift.accepted_by !== "null" &&
+          shift.accepted_by !== "" &&
+          shift.accepted_by !== 0 &&
+          shift.accepted_by !== "0") ||
+        rawContractor?.id != null ||
+        contractorName
+      );
+
+      const appliedVia = shift.guards?.name || "Unassigned";
+
+      // Profile images
+      const customerProfileImage = shift.customer?.profile_image || null;
+      const guardProfileImage = shift.guards?.profile_image || null;
+      const contractorProfileImage = rawContractor?.profile_image || null;
+
+      const isContractorInvoice =
+        Number(shift.contractor_invoice) === 1 ||
+        shift.contractor_invoice === 1 ||
+        shift.contractor_invoice === "1";
+
+      let computedStatus = currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1);
+      if (
+        currentStatus !== "confirmed" &&
+        currentStatus !== "completed" &&
+        shift.accepted_by != null &&
+        shift.accepted_by !== "null" &&
+        shift.payment_status !== "required" &&
+        !isContractorInvoice
+      ) {
+        computedStatus = "Waiting for Payment";
+      }
+
+      const paymentIntentId =
+        shift.payment_intent_id ||
+        shift.payment?.payment_intent_id ||
+        shift.rawShift?.payment_intent_id ||
+        null;
+
+      // Parse invoice_meta safely
+      let invoiceMeta = null;
+      const rawInvoiceMeta =
+        shift.invoice_meta ||
+        shift.rawShift?.invoice_meta ||
+        shift.payment?.invoice_meta ||
+        shift.contractor_invoice_meta;
+
+      if (rawInvoiceMeta) {
+        if (typeof rawInvoiceMeta === "object") {
+          invoiceMeta = rawInvoiceMeta;
+        } else if (typeof rawInvoiceMeta === "string") {
+          try {
+            invoiceMeta = JSON.parse(rawInvoiceMeta);
+          } catch (e) {
+            invoiceMeta = null;
+          }
+        }
+      }
+
+      const totalPayable =
+        invoiceMeta?.total_payable != null
+          ? invoiceMeta.total_payable
+          : null;
+
+      const jobAmount =
+        totalPayable != null
+          ? totalPayable
+          : (shift.job_amount || shift.amount || null);
+
+      return {
+        rawShift: shift,
+        id: shift.id,
+        status: computedStatus,
+        statusClass,
+        title: shift.site?.site_name || "Unknown Site",
+        location: shift.site?.address || "Location TBA",
+        role: shift.job_type || "Security Guard",
+        company: shift.site?.state || "",
+        applied: `Total Hours: ${shift.hours || 0}`,
+        hours: shift.hours || 0,
+        appliedVia,
+        pillIcon,
+        pillText: formattedTime,
+        formattedDate,
+        shiftDate: shiftDate || formattedDate || "N/A",
+        timeWindow,
+        startDisplay,
+        endDisplay,
+        createdAt: formattedCreatedAt,
+        isAcceptedByContractor,
+        contractorName,
+        contractor: rawContractor,
+        accepted_by: shift.accepted_by,
+        documents,
+        customerProfileImage,
+        guardProfileImage,
+        contractorProfileImage,
+        payment_intent_id: paymentIntentId,
+        invoiceMeta,
+        totalPayable,
+        jobAmount,
+      };
+    });
+  }, [submitData]);
+
+  const waitingForPaymentJobs = useMemo(() => {
+    return applications.filter((app) => app.status === "Waiting for Payment");
+  }, [applications]);
+
+  const filteredApplications = useMemo(() => {
+    if (!searchQuery.trim()) return applications;
+    const lowerQuery = searchQuery.toLowerCase();
+    return applications.filter(
+      (app) =>
+        app.title.toLowerCase().includes(lowerQuery) ||
+        app.location.toLowerCase().includes(lowerQuery)
+    );
+  }, [applications, searchQuery]);
+
+  const openModal = (app) => setSelectedApp(app);
+  const closeModal = () => setSelectedApp(null);
+  const handleClosePaymentAlertModal = () => setShowPaymentAlertModal(false);
+
+  const canEditOrDeleteJob = useCallback(
+    (app) => {
+      if (!canManageJob || !app) return false;
+      const rawStatus = (app.rawShift?.job_status || "").toLowerCase().trim();
+      const computedStatus = (app.status || "").toLowerCase().trim();
+      return (
+        rawStatus === "pending" ||
+        rawStatus === "confirmed" ||
+        computedStatus === "pending" ||
+        computedStatus === "confirmed" ||
+        computedStatus === "waiting for payment"
+      );
+    },
+    [canManageJob]
+  );
+
+  const parseDateTimeSafe = (dateStr) => {
+    if (!dateStr) return null;
+    if (dateStr instanceof Date && !isNaN(dateStr.getTime())) return dateStr;
+    const str = String(dateStr).trim();
+    let p = parse(str, "yyyy-MM-dd HH:mm", new Date());
+    if (isValid(p)) return p;
+    p = parse(str, "yyyy-MM-dd HH:mm:ss", new Date());
+    if (isValid(p)) return p;
+    p = parse(str, "MM-dd-yyyy HH:mm", new Date());
+    if (isValid(p)) return p;
+    const d = new Date(str);
+    if (isValid(d)) return d;
+    return null;
+  };
+
+  const handleOpenEditModal = (app) => {
+    const sDate = parseDateTimeSafe(app.rawShift?.start) || new Date();
+    const eDate =
+      parseDateTimeSafe(app.rawShift?.end) ||
+      new Date(sDate.getTime() + 8 * 60 * 60 * 1000);
+
+    setEditForm({
+      date: sDate,
+      startTime: format(sDate, "HH:mm"),
+      endTime: format(eDate, "HH:mm"),
+    });
+    setEditTimeBreakdown(null);
+    setPendingEditPayload(null);
+    setEditModalApp(app);
+  };
+
+  const closeEditModal = () => {
+    setEditModalApp(null);
+    setEditTimeBreakdown(null);
+    setPendingEditPayload(null);
+  };
+
+  const computedEditDuration = useMemo(() => {
+    if (!editForm.date || !editForm.startTime || !editForm.endTime) return null;
+    const startDT = combineDateAndTime(editForm.date, editForm.startTime);
+    let endDT = combineDateAndTime(editForm.date, editForm.endTime);
+    if (!startDT || !endDT) return null;
+    const isOvernight = endDT <= startDT;
+    if (isOvernight) {
+      endDT = new Date(endDT.getTime() + 24 * 60 * 60 * 1000);
+    }
+    const diffHrs = (endDT.getTime() - startDT.getTime()) / (1000 * 60 * 60);
+    return {
+      hours: Number(diffHrs.toFixed(2)),
+      isOvernight,
+    };
+  }, [editForm]);
+
+  const handleSaveEdit = async () => {
+    if (!editModalApp) return;
+
+    let payload;
+
+    if (editTimeBreakdown && pendingEditPayload) {
+      // Step 2: the payment breakdown was already shown and confirmed —
+      // resubmit the same payload with confirm=1 so it's actually applied.
+      payload = { ...pendingEditPayload, confirm: 1 };
+    } else {
+      if (!editForm.date || !editForm.startTime || !editForm.endTime) {
+        toast.error("Please provide date, start time, and end time.");
+        return;
+      }
+
+      const startDT = combineDateAndTime(editForm.date, editForm.startTime);
+      let endDT = combineDateAndTime(editForm.date, editForm.endTime);
+      if (!startDT || !endDT) {
+        toast.error("Invalid date or time entered.");
+        return;
+      }
+
+      if (endDT <= startDT) {
+        endDT = new Date(endDT.getTime() + 24 * 60 * 60 * 1000);
+      }
+
+      const diffHours = (endDT.getTime() - startDT.getTime()) / (1000 * 60 * 60);
+      if (diffHours <= 0) {
+        toast.error("End time must be after start time.");
+        return;
+      }
+
+      payload = {
+        id: editModalApp.id,
+        start: format(startDT, "MM-dd-yyyy HH:mm"),
+        end: format(endDT, "MM-dd-yyyy HH:mm"),
+        admin_id: userId,
+      };
+    }
+
+    const res = await submitAction("api/update-roster-time", payload, { method: "POST" });
+
+    // Backend wants the payment impact confirmed before it applies anything —
+    // show the breakdown and stop here instead of treating this as done.
+    if (res?.confirm_required) {
+      setPendingEditPayload(payload);
+      setEditTimeBreakdown(res.breakdown || {});
+      return;
+    }
+
+    if (res && res.success !== false) {
+      toast.success(res.message || "Job times updated successfully!");
+      closeEditModal();
+      if (selectedApp?.id === editModalApp.id) {
+        setSelectedApp(null);
+      }
+      fetchCustomerSites(currentPage);
+    }
+  };
+
+  const handleOpenDeleteModal = (app) => {
+    setDeleteModalApp(app);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteModalApp) return;
+
+    const jobId =
+      deleteModalApp.id ||
+      deleteModalApp.job_id ||
+      deleteModalApp.rawShift?.id ||
+      deleteModalApp.rawShift?.job_id;
+
+    if (!jobId) {
+      toast.error("Job ID not found for this job.");
+      return;
+    }
+
+    const payload = {
+      job_id: jobId,
+      user_id: userId,
+    };
+
+    const res = await submitAction("api/payment/cancel", payload, { method: "POST" });
+    if (res && res.success !== false) {
+      toast.success(res.message || "Job deleted successfully!");
+      setDeleteModalApp(null);
+      if (selectedApp?.id === deleteModalApp.id) {
+        setSelectedApp(null);
+      }
+      fetchCustomerSites(currentPage);
+    }
+  };
+
+  // Lock background scroll when either modal is open
+  useEffect(() => {
+    const isAnyModalOpen = Boolean(
+      selectedApp ||
+      (isClient && showPaymentAlertModal && waitingForPaymentJobs.length > 0) ||
+      editModalApp ||
+      deleteModalApp
+    );
+    if (isAnyModalOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [selectedApp, showPaymentAlertModal, waitingForPaymentJobs.length, isClient, editModalApp, deleteModalApp]);
+
+  const handlePayNow = useCallback(
+    (appOrJob) => {
+      const paymentIntentId =
+        appOrJob?.payment_intent_id ||
+        appOrJob?.rawShift?.payment_intent_id ||
+        appOrJob?.rawShift?.payment?.payment_intent_id ||
+        appOrJob?.payment?.payment_intent_id;
+
+      if (!paymentIntentId) {
+        toast.error("Payment link is not available for this job.");
+        return;
+      }
+
+      if (
+        typeof paymentIntentId === "string" &&
+        (paymentIntentId.startsWith("http://") || paymentIntentId.startsWith("https://"))
+      ) {
+        window.location.href = paymentIntentId;
+      } else if (typeof paymentIntentId === "string" && paymentIntentId.startsWith("/")) {
+        navigate(paymentIntentId);
+      } else {
+        window.location.href = paymentIntentId;
+      }
+    },
+    [navigate]
+  );
+
+  const rangeLabel = useMemo(() => {
+    if (!startDate || !endDate) return "";
+    return `${format(startDate, "dd MMM")} – ${format(endDate, "dd MMM yyyy")}`;
+  }, [startDate, endDate]);
+
+  const handlePageChange = (page) => {
+    if (page < 1 || page > pagination.lastPage || page === currentPage) return;
+    hasAutoOpenedPaymentModal.current = false;
+    setCurrentPage(page);
+    fetchCustomerSites(page);
+  };
+
+  const handleSearch = () => {
+    hasAutoOpenedPaymentModal.current = false;
+    setCurrentPage(1);
+    fetchCustomerSites(1);
+  };
+
+  const pageNumbers = useMemo(
+    () => getPageNumbers(currentPage, pagination.lastPage),
+    [currentPage, pagination.lastPage]
+  );
+
+  if (loading) return <Loader />;
+
+  return (
+    <>
+      <style>
+        {`
+          :root {
+            --navy-950: #0a1930;
+            --navy-900: #0e2340;
+            --teal: #0A7C6E;
+            --teal-dark: #075e53;
+            --teal-tint: #f0fdf9;
+            --teal-border: #d1fae5;
+            --amber: #d97706;
+            --amber-tint: #fffbeb;
+            --success: #16a34a;
+            --purple: #7c3aed;
+            --sky: #0ea5e9;
+            --ink: #0f172a;
+            --slate: #1e293b;
+            --muted: #64748b;
+            --faint: #94a3b8;
+            --line: #e2e8f0;
+            --line-soft: #f1f5f9;
+            --surface: #ffffff;
+            --canvas: #f6f8fa;
+          }
+
+
+          /* ---------- Hero header ---------- */
+          .jobs-hero {
+            position: relative;
+            background: linear-gradient(135deg, var(--navy-950) 0%, var(--navy-900) 65%, #0f2f52 100%);
+            border-radius: 22px;
+            padding: 34px 36px 46px;
+            overflow: hidden;
+            isolation: isolate;
+          }
+          .jobs-hero::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image: radial-gradient(rgba(255,255,255,0.10) 1px, transparent 1px);
+            background-size: 22px 22px;
+            opacity: 0.35;
+            z-index: -1;
+          }
+          .jobs-hero::after {
+            content: "";
+            position: absolute;
+            top: -60px;
+            right: -60px;
+            width: 260px;
+            height: 260px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(10,124,110,0.45) 0%, rgba(10,124,110,0) 70%);
+            z-index: -1;
+          }
+          .jobs-hero-eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            color: #6ee7d8;
+            margin-bottom: 10px;
+          }
+          .jobs-hero-eyebrow .dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: #34d399;
+            box-shadow: 0 0 0 4px rgba(52,211,153,0.18);
+          }
+          .jobs-hero h1 {
+            color: #fff;
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.4px;
+            margin: 0 0 6px;
+          }
+          .jobs-hero p {
+            color: rgba(255,255,255,0.62);
+            font-size: 14px;
+            margin: 0;
+            text-transform: none;
+          }
+          .jobs-hero-stats {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 22px;
+          }
+          .jobs-hero-stat {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            backdrop-filter: blur(6px);
+            border-radius: 14px;
+            padding: 12px 18px;
+            min-width: 140px;
+            flex: 1 1 160px;
+          }
+          .jobs-hero-stat-label {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.5);
+            display: block;
+            margin-bottom: 4px;
+          }
+          .jobs-hero-stat-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.2px;
+          }
+
+          /* ---------- Filter card ---------- */
+          .filter-card {
+            background: var(--surface);
+            border-radius: 18px;
+            box-shadow: 0 18px 40px -14px rgba(10, 25, 48, 0.28);
+            border: 1px solid var(--line-soft);
+            padding: 16px 18px;
+            margin: -30px 18px 0;
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            align-items: center;
+            justify-content: space-between;
+          }
+          .search-box {
+            min-width: 260px;
+            flex: 1 1 260px;
+            display: flex;
+            align-items: center;
+            background: var(--canvas);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 9px 14px;
+            transition: border-color 0.15s, box-shadow 0.15s;
+          }
+          .search-box:focus-within {
+            border-color: var(--teal);
+            box-shadow: 0 0 0 3px rgba(10,124,110,0.12);
+            background: #fff;
+          }
+          .search-box i.fa-magnifying-glass { color: var(--faint); font-size: 13px; }
+          .search-box input {
+            font-size: 14px;
+            color: var(--slate);
+          }
+          .search-box input::placeholder { color: var(--faint); }
+          .search-box .fa-xmark { cursor: pointer; color: var(--faint); font-size: 12px; }
+          .search-box .fa-xmark:hover { color: var(--slate); }
+
+          .date-range-filter {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: var(--canvas);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 8px 16px;
+          }
+          .date-range-fields { display: flex; align-items: flex-end; gap: 14px; }
+          .date-field { display: flex; flex-direction: column; min-width: 108px; }
+          .date-field-label {
+            font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+            color: var(--faint); margin-bottom: 3px; display: flex; align-items: center; gap: 5px;
+          }
+          .date-field-label i { font-size: 10px; color: var(--teal); }
+          .date-field-input { font-size: 13.5px !important; font-weight: 600; padding: 0 !important; background: transparent !important; color: var(--slate); }
+          .date-field-input:focus { outline: none; box-shadow: none; }
+          .date-range-divider { height: 26px; width: 1px; background: var(--line); align-self: flex-end; margin-bottom: 4px; }
+
+          .date-search-btn {
+            border-radius: 10px !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            padding: 10px 20px !important;
+            white-space: nowrap;
+            background: var(--teal) !important;
+            border-color: var(--teal) !important;
+            box-shadow: 0 6px 14px -4px rgba(10,124,110,0.45);
+            transition: transform 0.15s, box-shadow 0.15s;
+          }
+          .date-search-btn:hover { transform: translateY(-1px); box-shadow: 0 10px 18px -4px rgba(10,124,110,0.5); }
+
+          /* ---------- Summary strip ---------- */
+          .quick-stat-chip {
+            display: flex; align-items: center; gap: 10px;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 10px 14px;
+            flex: 1 1 170px;
+            transition: box-shadow 0.15s, transform 0.15s;
+          }
+          .quick-stat-chip:hover { box-shadow: 0 6px 16px -6px rgba(15,23,42,0.12); transform: translateY(-1px); }
+          .quick-stat-chip i {
+            width: 34px; height: 34px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(10, 124, 110, 0.08); color: var(--teal); font-size: 14px; flex-shrink: 0;
+          }
+          .quick-stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--faint); display: block; margin-bottom: 1px; }
+          .quick-stat-value { font-size: 14px; font-weight: 700; color: var(--slate); }
+
+          /* ---------- Shift cards ---------- */
+          .application-grid { margin-top: 4px; }
+          .shift-card {
+            border-radius: 18px;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid var(--line-soft);
+          }
+          .shift-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 35px -10px rgba(15, 23, 42, 0.14), 0 8px 14px -8px rgba(15,23,42,0.08);
+            border-color: transparent;
+          }
+          .card-accent-bar {
+            position: absolute; top: 0; left: 0; right: 0; height: 4px;
+            border-radius: 18px 18px 0 0;
+          }
+
+          .status-badge {
+            font-size: 9.5px;
+            font-weight: 700;
+            border-radius: 20px;
+            padding: 2.5px 7px;
+            text-transform: capitalize;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            letter-spacing: 0.1px;
+            white-space: nowrap;
+            line-height: 1;
+            vertical-align: middle;
+          }
+          .status-badge i {
+            font-size: 6.8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            margin: 0;
+            padding-bottom: 0.2px;
+          }
+
+          .card-title-text { font-size: 1.05rem; letter-spacing: -0.3px; color: var(--ink); }
+
+          .location-text { font-size: 12.5px; color: var(--muted); display: flex; align-items: flex-start; gap: 6px; line-height: 1.4; }
+          .location-text i { color: var(--teal); margin-top: 3px; font-size: 12px; flex-shrink: 0; }
+          .location-text span {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            word-break: break-word;
+          }
+
+          .contractor-badge {
+            background: rgba(139, 92, 246, 0.08); color: var(--purple); border: 1px solid rgba(139, 92, 246, 0.22);
+            border-radius: 30px; padding: 4px 12px; font-size: 11px; font-weight: 600;
+            display: inline-flex; align-items: center; gap: 5px; letter-spacing: 0.2px;
+          }
+
+          /* ---------- Shift meta row ---------- */
+          .shift-meta-row {
+            background: var(--teal-tint);
+            border: 1px solid var(--teal-border);
+            border-radius: 12px;
+            padding: 12px 14px;
+            display: flex;
+            align-items: center;
+            margin: 14px 0 2px;
+          }
+          .shift-meta-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex: 1;
+            min-width: 0;
+          }
+          .shift-meta-item + .shift-meta-item {
+            border-left: 1px solid var(--teal-border);
+            padding-left: 12px;
+            margin-left: 12px;
+          }
+          .shift-meta-label {
+            font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+            color: var(--teal-dark); opacity: 0.75; display: flex; align-items: center; gap: 4px;
+          }
+          .shift-meta-label i { font-size: 9.5px; }
+          .shift-meta-value {
+            font-size: 13.5px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          }
+          .shift-meta-item.hours-meta { flex: 0 0 auto; align-items: flex-end; }
+
+          .assignee-avatar {
+            width: 36px; height: 36px; min-width: 36px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700;
+            border: 2px solid #fff; box-shadow: 0 0 0 1px var(--line);
+          }
+          .assignee-label { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--faint); }
+          .assignee-name { font-size: 12.5px; color: var(--ink); }
+
+          .card-footer-section {
+            border-top: 1px solid var(--line-soft);
+          }
+
+          .card-actions-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            flex-wrap: wrap;
+          }
+
+          .card-actions-group .details-btn,
+          .card-actions-group .pay-now-btn,
+          .card-actions-group .job-edit-btn,
+          .card-actions-group .job-delete-btn {
+            border-radius: 30px !important;
+            padding: 0 10px !important;
+            font-size: 11.5px !important;
+            font-weight: 700 !important;
+            height: 34px !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            white-space: nowrap !important;
+            flex: 1 1 auto !important;
+            text-decoration: none !important;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s, background-color 0.15s;
+          }
+
+          .details-btn {
+            background: var(--teal) !important;
+            border: 1px solid var(--teal) !important;
+            color: #fff !important;
+            box-shadow: 0 4px 10px -2px rgba(10,124,110,0.4);
+            transition: transform 0.15s, box-shadow 0.15s;
+          }
+          .details-btn:hover {
+            transform: translateY(-1px);
+            background: var(--teal-dark) !important;
+            border-color: var(--teal-dark) !important;
+            box-shadow: 0 6px 14px -2px rgba(10,124,110,0.45);
+            color: #fff !important;
+          }
+
+          .job-edit-btn {
+            background: #f0fdf9 !important;
+            border: 1px solid #99f6e4 !important;
+            color: #0f766e !important;
+            box-shadow: 0 2px 6px -1px rgba(15, 118, 110, 0.15);
+          }
+          .job-edit-btn:hover {
+            transform: translateY(-1px);
+            background: #0f766e !important;
+            border-color: #0f766e !important;
+            color: #ffffff !important;
+            box-shadow: 0 4px 12px -2px rgba(15, 118, 110, 0.35);
+          }
+
+          .job-delete-btn {
+            background: #fff1f2 !important;
+            border: 1px solid #fecdd3 !important;
+            color: #e11d48 !important;
+            box-shadow: 0 2px 6px -1px rgba(225, 29, 72, 0.15);
+          }
+          .job-delete-btn:hover {
+            transform: translateY(-1px);
+            background: #e11d48 !important;
+            border-color: #e11d48 !important;
+            color: #ffffff !important;
+            box-shadow: 0 4px 12px -2px rgba(225, 29, 72, 0.35);
+          }
+
+          .pay-now-btn {
+            background: #d97706 !important;
+            border: 1px solid #d97706 !important;
+            color: #fff !important;
+            box-shadow: 0 4px 10px -2px rgba(217, 119, 6, 0.4);
+            transition: transform 0.15s, box-shadow 0.15s;
+          }
+          .pay-now-btn:hover {
+            transform: translateY(-1px);
+            background: #b45309 !important;
+            border-color: #b45309 !important;
+            box-shadow: 0 6px 14px -2px rgba(217, 119, 6, 0.5);
+            color: #fff !important;
+          }
+
+          .modal-overlay-premium {
+            position: fixed;
+            inset: 0;
+            background: rgba(10, 20, 35, 0.62);
+            backdrop-filter: blur(6px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            padding: 1.5rem;
+            animation: modalFadeIn 0.25s ease-out;
+          }
+          @keyframes modalFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+          .modal-content-premium {
+            background: #ffffff;
+            border-radius: 22px;
+            box-shadow: 0 30px 60px -18px rgba(10, 25, 48, 0.5);
+            max-width: 680px;
+            width: 100%;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            animation: modalPopIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+          }
+          @keyframes modalPopIn {
+            from { opacity: 0; transform: scale(0.96) translateY(10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+          }
+          .modal-header-premium::after {
+            content: "";
+            position: absolute;
+            top: -30px;
+            right: -30px;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(10,124,110,0.5), transparent 70%);
+            pointer-events: none;
+          }
+          .modal-close-btn:hover {
+            background: rgba(255, 255, 255, 0.2) !important;
+          }
+
+          .card-footer-row { border-top: 1px solid var(--line-soft); }
+
+          /* ---------- Empty state ---------- */
+          .empty-state {
+            border: 1.5px dashed var(--line);
+            background: #fff;
+            border-radius: 18px;
+            padding: 56px 24px;
+          }
+          .empty-state i { font-size: 2rem; color: var(--faint); }
+          .empty-state-title { color: var(--slate); font-weight: 700; font-size: 15px; margin-top: 14px; }
+          .empty-state-sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+          /* ---------- Pagination ---------- */
+          .pagination-container {
+            background: #fff; border-radius: 16px; box-shadow: 0 4px 14px rgba(15,23,42,0.06);
+            border: 1px solid var(--line-soft);
+            padding: 14px 22px; margin-top: 30px;
+          }
+          .page-btn {
+            width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: #fff;
+            display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13.5px;
+            color: var(--slate); transition: all 0.15s;
+          }
+          .page-btn:hover { background: var(--line-soft); border-color: #cbd5e1; }
+          .page-btn.active { background: var(--teal); color: #fff; border-color: var(--teal); box-shadow: 0 4px 10px -2px rgba(10,124,110,0.4); }
+          .page-btn:disabled { opacity: 0.45; pointer-events: none; }
+          .page-btn.ellipsis {
+            border: none; background: transparent; cursor: default; pointer-events: none;
+          }
+
+          /* ---------- Modal ---------- */
+          .modal-overlay { backdrop-filter: blur(2px); }
+          .modal-content {
+            box-shadow: 0 30px 60px -18px rgba(10,25,48,0.4);
+          }
+          .modal-header-custom {
+            background: linear-gradient(120deg, var(--navy-950), var(--navy-900) 70%, #10345a);
+            position: relative;
+            overflow: hidden;
+          }
+          .modal-header-custom::after {
+            content: ""; position: absolute; top: -40px; right: -40px; width: 160px; height: 160px;
+            border-radius: 50%; background: radial-gradient(circle, rgba(10,124,110,0.5), transparent 70%);
+          }
+          .modal-close-btn {
+            background: rgba(255,255,255,0.14); border: none; color: #fff; border-radius: 50%;
+            width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+            transition: background 0.15s; position: relative; z-index: 1;
+          }
+          .modal-close-btn:hover { background: rgba(255,255,255,0.26); }
+
+          .info-panel {
+            background: #fff; border-radius: 16px; border: 1px solid var(--line-soft);
+            box-shadow: 0 2px 10px rgba(15,23,42,0.04);
+            padding: 20px;
+          }
+          .info-panel h5 {
+            font-size: 15px; font-weight: 700; color: var(--slate);
+            display: flex; align-items: center; margin-bottom: 16px; padding-bottom: 12px;
+            border-bottom: 1px solid var(--line-soft);
+          }
+          .info-panel-icon {
+            width: 34px; height: 34px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center; margin-right: 11px; font-size: 13.5px;
+          }
+          .info-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 9px 0; border-bottom: 1px solid var(--line-soft);
+          }
+          .info-row:last-child { border-bottom: none; }
+          .info-row-label { color: var(--muted); font-size: 13px; font-weight: 600; display: flex; align-items: center; }
+          .info-row-icon { width: 16px; text-align: center; color: var(--teal); opacity: 0.85; margin-right: 8px; font-size: 12px; }
+          .info-row-value { color: var(--ink); font-weight: 600; font-size: 13px; text-align: left; max-width: 60%; }
+
+          .doc-pill {
+            display: inline-block; background: rgba(10, 124, 110, 0.08); color: var(--teal);
+            border: 1px solid rgba(10, 124, 110, 0.2); border-radius: 20px; padding: 2px 10px;
+            font-size: 11px; font-weight: 600; margin-right: 4px; margin-bottom: 4px; text-transform: capitalize;
+          }
+
+
+
+          .modal-footer-custom { background: #fff; border-top: 1px solid var(--line); }
+
+          /* Responsive */
+          @media (max-width: 767.98px) {
+            .jobs-hero { padding: 26px 20px 40px; border-radius: 18px; }
+            .jobs-hero h1 { font-size: 22px; }
+            .filter-card { margin: -26px 4px 0; padding: 14px; }
+          }
+@media (max-width: 575.98px) {
+  .filter-card { flex-direction: column; align-items: stretch; }
+
+  .search-box {
+    width: 100% !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    max-height: 40px !important;
+    padding: 0 12px !important;
+    box-sizing: border-box !important;
+  }
+  .search-box input.form-control {
+    height: 100% !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    line-height: 40px !important;
+    font-size: 13px !important;
+  }
+  .search-box i.fa-magnifying-glass {
+    font-size: 13px !important;
+  }
+
+  .date-range-filter { width: 100%; }
+  .date-range-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; width: 100%; }
+  .date-field { min-width: 0; width: 100%; }
+  .date-range-divider { display: none; }
+  .date-search-btn { width: 100%; margin-top: 4px; }
+}
+          .react-datepicker-wrapper { display: block; }
+        `}
+      </style>
+
+      <div className="dashboard-main jobs-page">
+        {/* Hero header */}
+        <div className="jobs-hero">
+          <span className="jobs-hero-eyebrow">
+            <span className="dot"></span> Live
+          </span>
+          <h1>Job Applications</h1>
+          <p>Viewing jobs for the selected date range.</p>
+
+          <div className="jobs-hero-stats">
+            <div className="jobs-hero-stat">
+              <span className="jobs-hero-stat-label">Date Range</span>
+              <span className="jobs-hero-stat-value">{rangeLabel || "—"}</span>
+            </div>
+            <div className="jobs-hero-stat">
+              <span className="jobs-hero-stat-label">Total Jobs</span>
+              <span className="jobs-hero-stat-value">{pagination.total}</span>
+            </div>
+            <div className="jobs-hero-stat">
+              <span className="jobs-hero-stat-label">Page</span>
+              <span className="jobs-hero-stat-value">{pagination.currentPage} of {pagination.lastPage}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Filter card */}
+        <div className="filter-card">
+          <div className="search-box">
+            <i className="fa-solid fa-magnifying-glass me-2"></i>
+            <input
+              type="text"
+              className="form-control form-control-sm border-0 shadow-none"
+              placeholder="Search site or address"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ backgroundColor: "transparent" }}
+            />
+            {searchQuery && (
+              <i className="fa-solid fa-xmark ms-2" onClick={() => setSearchQuery("")}></i>
+            )}
+          </div>
+
+          <div className="date-range-filter">
+            <div className="date-range-fields">
+              <DateField
+                label="From"
+                selected={startDate}
+                onChange={(date) => setStartDate(date)}
+                placeholder="dd/mm/yyyy"
+                maxDate={endDate}
+              />
+              <div className="date-range-divider"></div>
+              <DateField
+                label="To"
+                selected={endDate}
+                onChange={(date) => setEndDate(date)}
+                placeholder="dd/mm/yyyy"
+                minDate={startDate}
+              />
+            </div>
+            <button onClick={handleSearch} className="btn btn-primary-custom date-search-btn">
+              <i className="fa-solid fa-magnifying-glass me-1"></i>
+              Search
+            </button>
+          </div>
+        </div>
+
+        {/* Cards grid – 3 columns when sidebar is open, 4 columns when sidebar is closed */}
+        <div
+          className={`row row-cols-1 row-cols-md-2 row-cols-lg-3 ${isExpanded ? "row-cols-xl-3" : "row-cols-xl-4"
+            } g-4 application-grid mt-2`}
+        >
+          {filteredApplications.length === 0 ? (
+            <div className="col-12 empty-state text-center w-100">
+              <i className="fa-solid fa-magnifying-glass-minus d-block"></i>
+              <div className="empty-state-title">
+                {applications.length > 0 ? "No jobs match your search" : "No jobs found"}
+              </div>
+              <div className="empty-state-sub" style={{ textTransform: "none" }}>
+                {applications.length > 0
+                  ? "Try a different site name or address."
+                  : "Try adjusting the date range above."}
+              </div>
+            </div>
+          ) : (
+            filteredApplications.map((app, index) => (
+              <div className="col" key={app.id || index}>
+                <div className="card h-100 border-0 shadow-sm shift-card position-relative overflow-hidden">
+                  <div
+                    className="card-accent-bar"
+                    style={{
+                      background: app.isAcceptedByContractor
+                        ? "linear-gradient(90deg, #7c3aed, #a78bfa)"
+                        : app.statusClass === "offer"
+                          ? "linear-gradient(90deg, #16a34a, #22c55e)"
+                          : "linear-gradient(90deg, #d97706, #f59e0b)",
+                    }}
+                  ></div>
+
+                  <div className="card-body p-3 pt-4 d-flex flex-column">
+                    <div className="d-flex justify-content-between align-items-center mb-3 gap-2" style={{ minWidth: 0 }}>
+                      <span
+                        className={`status-badge flex-shrink-0 ${app.statusClass === "offer"
+                          ? "bg-success bg-opacity-10 text-success border border-success border-opacity-25"
+                          : "bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25"
+                          }`}
+                      >
+                        <i
+                          className={`fa-solid ${app.statusClass === "offer" ? "fa-circle-check" : "fa-hourglass-half"
+                            }`}
+                        ></i>
+                        {app.status}
+                      </span>
+                      <div className="text-muted text-end text-nowrap flex-shrink-0" style={{ fontSize: "9.5px", fontWeight: 600 }}>
+                        <i className="fa-regular fa-clock me-1" style={{ fontSize: "9px" }}></i> {app.createdAt}
+                      </div>
+                    </div>
+
+                    <h5 className="card-title fw-bold mb-2 card-title-text">
+                      {app.title}
+                    </h5>
+                    <div className="location-text mb-3" title={app.location}>
+                      <i className="fa-solid fa-location-dot flex-shrink-0"></i>
+                      <span>{app.location}</span>
+                    </div>
+
+                    {Boolean(
+                      app.isAcceptedByContractor ||
+                      app.contractorName ||
+                      app.contractor ||
+                      (app.rawShift?.accepted_by != null &&
+                        app.rawShift?.accepted_by !== "null" &&
+                        app.rawShift?.accepted_by !== "")
+                    ) && (
+                      <div className="mb-2">
+                        <span className="contractor-badge" title="Accepted by Contractor">
+                          <i className="fa-solid fa-building-shield"></i> Accepted by:{" "}
+                          <strong>
+                            {app.contractorName ||
+                              app.contractor?.name ||
+                              app.rawShift?.contractor?.name ||
+                              `Contractor #${app.rawShift?.accepted_by || app.accepted_by || app.contractor?.id}`}
+                          </strong>
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="shift-meta-row">
+                      <div className="shift-meta-item">
+                        <span className="shift-meta-label">
+                          <i className="fa-regular fa-calendar-days"></i> Date
+                        </span>
+                        <span className="shift-meta-value">{app.formattedDate || "N/A"}</span>
+                      </div>
+                      <div className="shift-meta-item">
+                        <span className="shift-meta-label">
+                          <i className="fa-regular fa-clock"></i> Time
+                        </span>
+                        <span className="shift-meta-value">{app.timeWindow || app.pillText}</span>
+                      </div>
+                      <div className="shift-meta-item hours-meta">
+                        <span className="shift-meta-label">
+                          <i className="fa-solid fa-hourglass-half"></i> Hours
+                        </span>
+                        <span className="shift-meta-value">{app.hours}{app.hours === 1 ? " hr" : " hrs"}</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-auto pt-3 card-footer-section">
+                      {userType !== "staff" && (
+                        <div className="d-flex align-items-center gap-2 mb-3 assignee-info">
+                          <ProfileImage
+                            src={app.guardProfileImage}
+                            name={app.appliedVia}
+                            size={34}
+                          />
+                          <div className="d-flex flex-column" style={{ minWidth: 0 }}>
+                            <span className="assignee-label">Assigned To</span>
+                            <span className="fw-bold pb-2 text-truncate d-block assignee-name">
+                              {app.appliedVia}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      <div className="card-actions-group d-flex align-items-center gap-2 w-100">
+                        {isClient && app.status === "Waiting for Payment" && (
+                          <button
+                            type="button"
+                            className="btn btn-warning-custom btn-sm pay-now-btn"
+                            onClick={() => handlePayNow(app)}
+                          >
+                            <i className="fa-solid fa-credit-card me-1"></i> Pay Now
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn btn-primary-custom btn-sm details-btn"
+                          onClick={() => openModal(app)}
+                        >
+                          Details
+                        </button>
+                        {canManageJob && canEditOrDeleteJob(app) && (
+                          <>
+                            <button
+                              type="button"
+                              className="btn btn-sm job-edit-btn"
+                              title="Edit Shift Times"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEditModal(app);
+                              }}
+                            >
+                              <i className="fa-solid fa-pen-to-square me-1"></i> Edit
+                            </button>
+                             <button
+                              type="button"
+                              className="btn btn-sm job-delete-btn"
+                              title="Delete / Cancel Job"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDeleteModal(app);
+                              }}
+                            >
+                              <i className="fa-solid fa-trash-can me-1"></i> Delete
+                            </button> 
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Pagination – smart with ellipsis */}
+        {pagination.lastPage > 1 && (
+          <div className="pagination-container d-flex justify-content-center align-items-center gap-2 flex-wrap">
+            <button
+              className="page-btn"
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+            >
+              <i className="fa-solid fa-chevron-left"></i>
+            </button>
+            {pageNumbers.map((page, idx) =>
+              page === "..." ? (
+                <span key={`ellipsis-${idx}`} className="page-btn ellipsis">
+                  …
+                </span>
+              ) : (
+                <button
+                  key={page}
+                  className={`page-btn ${currentPage === page ? "active" : ""}`}
+                  onClick={() => handlePageChange(page)}
+                >
+                  {page}
+                </button>
+              )
+            )}
+            <button
+              className="page-btn"
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === pagination.lastPage}
+            >
+              <i className="fa-solid fa-chevron-right"></i>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ---------- MODAL ---------- */}
+      {selectedApp && (
+        <div
+          className="modal-overlay modal-overlay-anim"
+          onClick={closeModal}
+          style={{
+            zIndex: 9999,
+            backgroundColor: "rgba(10,20,35,0.62)",
+            position: "fixed",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            className="modal-content modal-content-anim border-0"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "850px",
+              maxHeight: "90vh",
+              background: "#f8fafc",
+              borderRadius: "18px",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              className="modal-header-custom d-flex justify-content-between align-items-center"
+              style={{ padding: "20px 24px" }}
+            >
+              <h3 style={{ margin: 0, fontSize: "19px", fontWeight: "700", letterSpacing: "0.2px", color: "#fff", position: "relative", zIndex: 1 }}>
+                <i className="fa-solid fa-clipboard-check me-2 opacity-75"></i> Job Details
+              </h3>
+              <button onClick={closeModal} className="modal-close-btn">
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
+              <div className="d-flex flex-wrap gap-2 mb-4">
+                {[
+                  {
+                    icon: "fa-circle-info",
+                    label: "Status",
+                    value: selectedApp.status,
+                  },
+                  {
+                    icon: "fa-hourglass-half",
+                    label: "Total Hours",
+                    value: selectedApp.rawShift.hours ?? "N/A",
+                  },
+                  {
+                    icon: "fa-calendar-plus",
+                    label: "Created",
+                    value: selectedApp.createdAt || "N/A",
+                  },
+                  ...(userType === "admin"
+                    ? [
+                      {
+                        icon: "fa-money-bill",
+                        label: "Job Amount",
+                        value: selectedApp.rawShift.job_amount
+                          ? `$${selectedApp.rawShift.job_amount}`
+                          : "N/A",
+                      },
+                    ]
+                    : []),
+                  ...(Boolean(
+                    selectedApp.isAcceptedByContractor ||
+                    selectedApp.contractorName ||
+                    selectedApp.contractor ||
+                    (selectedApp.rawShift?.accepted_by != null &&
+                      selectedApp.rawShift?.accepted_by !== "null" &&
+                      selectedApp.rawShift?.accepted_by !== "")
+                  )
+                    ? [
+                        {
+                          icon: "fa-building-shield",
+                          label: "Contractor",
+                          value:
+                            selectedApp.contractorName ||
+                            selectedApp.contractor?.name ||
+                            selectedApp.rawShift?.contractor?.name ||
+                            `Contractor #${selectedApp.rawShift?.accepted_by || selectedApp.accepted_by || selectedApp.contractor?.id}`,
+                        },
+                      ]
+                    : []),
+                ].map((stat) => (
+                  <div className="quick-stat-chip" key={stat.label}>
+                    <i className={`fa-solid ${stat.icon}`}></i>
+                    <div className="d-flex flex-column" style={{ minWidth: 0 }}>
+                      <span className="quick-stat-label">{stat.label}</span>
+                      <span className="quick-stat-value pb-1 text-truncate d-block">
+                        {stat.value}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="row g-4 mb-4">
+                <div className="col-md-6">
+                  <div className="info-panel h-100">
+                    <h5>
+                      <span className="info-panel-icon" style={{ background: "#e0f2fe", color: "#0ea5e9" }}>
+                        <i className="fa-solid fa-building"></i>
+                      </span>
+                      Site Information
+                    </h5>
+                    <InfoRow icon="fa-signature" label="Site Name" value={selectedApp.rawShift.site?.site_name} />
+                    <InfoRow icon="fa-map-pin" label="Address" value={selectedApp.rawShift.site?.address} />
+                    <InfoRow icon="fa-id-badge" label="Job Type" value={selectedApp.rawShift.job_type || "N/A"} />
+                  </div>
+                </div>
+                <div className="col-md-6">
+                  <div className="info-panel h-100">
+                    <h5>
+                      <span className="info-panel-icon" style={{ background: "#fef3c7", color: "#d97706" }}>
+                        <i className="fa-solid fa-clock-rotate-left"></i>
+                      </span>
+                      Job Information
+                    </h5>
+                    <InfoRow icon="fa-circle-info" label="Status" value={selectedApp.rawShift.job_status} />
+                    <InfoRow icon="fa-arrow-right-to-bracket" label="Start Time" value={selectedApp.startDisplay} transform={false} />
+                    <InfoRow icon="fa-arrow-right-from-bracket" label="End Time" value={selectedApp.endDisplay} transform={false} />
+                    <InfoRow icon="fa-hourglass-half" label="Total Hours" value={selectedApp.rawShift.hours} />
+                    <InfoRow icon="fa-calendar-plus" label="Created At" value={selectedApp.createdAt} />
+                    {Boolean(
+                      selectedApp.isAcceptedByContractor ||
+                      selectedApp.contractorName ||
+                      selectedApp.contractor ||
+                      (selectedApp.rawShift?.accepted_by != null &&
+                        selectedApp.rawShift?.accepted_by !== "null" &&
+                        selectedApp.rawShift?.accepted_by !== "")
+                    ) && (
+                      <InfoRow
+                        icon="fa-building-shield"
+                        label="Accepted By"
+                        value={
+                          selectedApp.contractorName ||
+                          selectedApp.contractor?.name ||
+                          selectedApp.rawShift?.contractor?.name ||
+                          `Contractor #${selectedApp.rawShift?.accepted_by || selectedApp.accepted_by || selectedApp.contractor?.id}`
+                        }
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="row g-4">
+                {(userType !== "customer" && userType !== "staff") && (
+                  <div className="col-md-6">
+                    <div className="info-panel h-100">
+                      <h5>
+                        <span className="info-panel-icon" style={{ background: "#f3e8ff", color: "#9333ea" }}>
+                          <i className="fa-solid fa-user-tie"></i>
+                        </span>
+                        Client Details
+                      </h5>
+                      <div className="d-flex align-items-center gap-2 mb-3">
+                        <ProfileImage src={selectedApp.customerProfileImage} name={selectedApp.rawShift.customer?.name || "Client"} size={40} />
+                        <span className="fw-bold">{selectedApp.rawShift.customer?.name || "Client"}</span>
+                      </div>
+                      {/* <InfoRow icon="fa-user" label="Name" value={selectedApp.rawShift.customer?.name || "Unknown"} /> */}
+                      <InfoRow icon="fa-envelope" label="Email" value={selectedApp.rawShift.customer?.email || "N/A"} transform={false} />
+                      <InfoRow icon="fa-phone" label="Phone" value={selectedApp.rawShift.customer?.phone || "N/A"} />
+                    </div>
+                  </div>
+                )}
+                <div className={(userType !== "customer" && userType !== "staff") ? "col-md-6" : "col-12"}>
+                  <div className="info-panel h-100">
+                    <h5>
+                      <span className="info-panel-icon" style={{ background: "#dcfce7", color: "#16a34a" }}>
+                        <i className="fa-solid fa-shield-halved"></i>
+                      </span>
+                      Assignment Details
+                    </h5>
+                    <div className="d-flex align-items-center gap-2 mb-3">
+                      <ProfileImage src={selectedApp.guardProfileImage} name={selectedApp.appliedVia} size={40} />
+                      <div className="d-flex flex-column" style={{ minWidth: 0 }}>
+                        <span className="text-muted small" style={{ fontSize: "11px" }}>Assigned Staff</span>
+                        <span className="fw-bold">{selectedApp.appliedVia}</span>
+                      </div>
+                    </div>
+
+                    {Boolean(
+                      selectedApp.isAcceptedByContractor ||
+                      selectedApp.contractorName ||
+                      selectedApp.contractor ||
+                      (selectedApp.rawShift?.accepted_by != null &&
+                        selectedApp.rawShift?.accepted_by !== "null" &&
+                        selectedApp.rawShift?.accepted_by !== "")
+                    ) && (
+                      <div className="pt-2 mt-2 border-top">
+                        <div className="d-flex align-items-center gap-2 mt-1">
+                          <ProfileImage
+                            src={selectedApp.contractorProfileImage || selectedApp.rawShift?.contractor?.profile_image}
+                            name={selectedApp.contractorName || selectedApp.contractor?.name || selectedApp.rawShift?.contractor?.name || "Contractor"}
+                            size={36}
+                          />
+                          <div className="d-flex flex-column" style={{ minWidth: 0 }}>
+                            <span className="text-muted small" style={{ fontSize: "11px" }}>
+                              <i className="fa-solid fa-building-shield me-1" style={{ color: "#7c3aed" }}></i>
+                              Accepted by (Contractor)
+                            </span>
+                            <span className="fw-bold text-dark" style={{ fontSize: "13.5px" }}>
+                              {selectedApp.contractorName ||
+                                selectedApp.contractor?.name ||
+                                selectedApp.rawShift?.contractor?.name ||
+                                `Contractor #${selectedApp.rawShift?.accepted_by || selectedApp.accepted_by || selectedApp.contractor?.id}`}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {userType === "admin" && (
+                      <InfoRow
+                        icon="fa-money-bill"
+                        label="Job Amount"
+                        value={selectedApp.rawShift.job_amount ? `$${selectedApp.rawShift.job_amount}` : "N/A"}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* ---------- DESCRIPTION (NEW) ---------- */}
+              {selectedApp.rawShift.description && (
+                <div className="mt-4 p-4 bg-white rounded-4 shadow-sm border border-light mb-4">
+                  <h5 className="fw-bold d-flex align-items-center mb-3 pb-2 border-bottom" style={{ fontSize: '16px', color: '#1e293b' }}>
+                    <i className="fa-solid fa-align-left me-2" style={{ color: '#0A7C6E' }}></i>
+                    Description
+                  </h5>
+                  <p className="mb-0" style={{ fontSize: '14px', color: '#334155', textTransform: 'none', lineHeight: '1.6' }}>
+                    {selectedApp.rawShift.description}
+                  </p>
+                </div>
+              )}
+              {/* ---------- REQUIRED DOCUMENTS (pill badges) ---------- */}
+              
+
+              {/* ---------- SIGN IN / OUT DETAILS (CONFIRMED JOBS) ---------- */}
+              {Boolean(
+                selectedApp.status?.toLowerCase() === "confirmed" ||
+                selectedApp.status?.toLowerCase() === "completed" ||
+                selectedApp.rawShift?.job_status?.toLowerCase() === "confirmed" ||
+                selectedApp.rawShift?.job_status?.toLowerCase() === "completed" ||
+                selectedApp.rawShift?.roster_activity?.signin_time ||
+                selectedApp.rawShift?.signin_time ||
+                selectedApp.rawShift?.signin_status ||
+                selectedApp.rawShift?.roster_activity?.signin_status
+              ) && (
+                <div className="mt-4 p-4 bg-white rounded-4 shadow-sm border border-light mb-4">
+                  <h5 className="fw-bold d-flex align-items-center mb-3 pb-2 border-bottom" style={{ fontSize: '16px', color: '#1e293b' }}>
+                    <i className="fa-solid fa-clock-rotate-left me-2" style={{ color: '#0A7C6E' }}></i>
+                    Sign In/Out Details
+                  </h5>
+                  <SignInOutDetails
+                    rosterId={selectedApp.rawShift?.id || selectedApp.id}
+                    guardId={
+                      selectedApp.rawShift?.guards?.id ||
+                      selectedApp.rawShift?.assigned_to ||
+                      selectedApp.rawShift?.guard_id ||
+                      selectedApp.rawShift?.accepted_by
+                    }
+                    shift={selectedApp.rawShift}
+                    site={selectedApp.rawShift?.site}
+                  />
+                </div>
+              )}
+
+      {selectedApp.documents && selectedApp.documents.length > 0 && (
+                <div className="mt-4 p-4 bg-white rounded-4 shadow-sm border border-light mb-4">
+                  <h5 className="fw-bold d-flex align-items-center mb-3 pb-2 border-bottom" style={{ fontSize: '16px', color: '#1e293b' }}>
+                    <i className="fa-solid fa-file-shield me-2" style={{ color: '#0A7C6E' }}></i>
+                    Required Documents
+                  </h5>
+                  <div className="d-flex flex-wrap gap-2">
+                    {selectedApp.documents.map((doc, idx) => (
+                      <span
+                        key={idx}
+                        className="badge rounded-pill px-2 py-2"
+                        style={{
+                          backgroundColor: 'rgba(10, 124, 110, 0.1)',
+                          color: '#0A7C6E',
+                          border: '1px solid rgba(10, 124, 110, 0.3)',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {doc}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            <div
+              className="modal-footer-custom d-flex justify-content-end align-items-center gap-2 flex-wrap"
+              style={{ padding: "16px 24px" }}
+            >
+              {canManageJob && canEditOrDeleteJob(selectedApp) && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditModal(selectedApp)}
+                    className="btn job-edit-btn px-3 rounded-pill fw-semibold shadow-sm"
+                    style={{ height: "36px" }}
+                  >
+                    <i className="fa-solid fa-pen-to-square me-1"></i> Edit Times
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenDeleteModal(selectedApp)}
+                    className="btn job-delete-btn px-3 rounded-pill fw-semibold shadow-sm"
+                    style={{ height: "36px" }}
+                  >
+                    <i className="fa-solid fa-trash-can me-1"></i> Delete Job
+                  </button>
+                </>
+              )}
+              {isClient && selectedApp.status === "Waiting for Payment" && (
+                <button
+                  type="button"
+                  onClick={() => handlePayNow(selectedApp)}
+                  className="btn btn-warning-custom px-4 rounded-pill fw-semibold shadow-sm text-white pay-now-btn"
+                  style={{ height: "36px", minWidth: "120px" }}
+                >
+                  <i className="fa-solid fa-credit-card me-1"></i> Pay Now
+                </button>
+              )}
+              <button
+                onClick={closeModal}
+                className="btn btn-primary-custom px-4 rounded-pill fw-semibold shadow-sm"
+                style={{ height: "36px", minWidth: "120px" }}
+              >
+                Close Window
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- PAYMENT ALERT MODAL ---------- */}
+      {isClient && showPaymentAlertModal && waitingForPaymentJobs.length > 0 && (
+        <div
+          className="modal-overlay-premium"
+          onClick={handleClosePaymentAlertModal}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="modal-content-premium"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div
+              className="modal-header-premium"
+              style={{
+                position: "relative",
+                background: "linear-gradient(120deg, #0a1930, #0e2340 70%, #10345a)",
+                padding: "18px 24px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexShrink: 0,
+                overflow: "hidden",
+              }}
+            >
+              <div className="d-flex align-items-center gap-2" style={{ position: "relative", zIndex: 1 }}>
+                <i
+                  className="fa-solid fa-credit-card"
+                  style={{ color: "#fbbf24", fontSize: "20px" }}
+                ></i>
+                <h3
+                  className="modal-title"
+                  style={{
+                    margin: 0,
+                    fontSize: "19px",
+                    fontWeight: 700,
+                    letterSpacing: "0.2px",
+                    color: "#fff",
+                  }}
+                >
+                  {waitingForPaymentJobs.length}{" "}
+                  {waitingForPaymentJobs.length === 1
+                    ? "Job Awaiting for Payment"
+                    : "Jobs Awaiting for Payment"}
+                </h3>
+              </div>
+              <button
+                className="modal-close-btn"
+                onClick={handleClosePaymentAlertModal}
+                type="button"
+                style={{
+                  position: "relative",
+                  zIndex: 2,
+                  width: "34px",
+                  height: "34px",
+                  borderRadius: "50%",
+                  border: "none",
+                  background: "rgba(255,255,255,0.08)",
+                  color: "#fff",
+                  fontSize: "16px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  transition: "background 0.2s, transform 0.2s",
+                  flexShrink: 0,
+                }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div
+              className="modal-body"
+              style={{
+                padding: "20px 24px",
+                overflowY: "auto",
+                flex: 1,
+              }}
+            >
+              {/* Info Box */}
+              <div
+                className="p-3 rounded-3 d-flex align-items-start mb-4"
+                style={{
+                  backgroundColor: "#F3F8F7",
+                  border: "1px solid #D8ECE8",
+                }}
+              >
+                <i
+                  className="fa-solid fa-circle-info mt-1 me-3 flex-shrink-0"
+                  style={{
+                    color: "#0A7C6E",
+                    fontSize: "18px",
+                  }}
+                ></i>
+                <div>
+                  <div className="fw-bold text-dark mb-1" style={{ fontSize: "13.5px" }}>
+                    Action Required
+                  </div>
+                  <div className="text-muted" style={{ fontSize: "13px", lineHeight: "1.4" }}>
+                    Your job has been accepted by the Staffoo Resource Partner. Please process the payment.
+                  </div>
+                </div>
+              </div>
+
+              {/* Jobs list */}
+              <div className="d-flex flex-column gap-3">
+                {waitingForPaymentJobs.map((job, idx) => (
+                  <div
+                    key={job.id || idx}
+                    className="p-3 rounded-3 position-relative"
+                    style={{
+                      backgroundColor: "#ffffff",
+                      border: "1px solid #e2e8f0",
+                      boxShadow: "0 2px 8px rgba(15, 23, 42, 0.04)",
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    {/* Top Row: Job Title & Amount */}
+                    <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
+                      <div>
+                        <h6
+                          className="fw-bold mb-1 text-dark"
+                          style={{ fontSize: "15px", letterSpacing: "-0.2px" }}
+                        >
+                          {job.title}
+                        </h6>
+                        <div
+                          className="text-muted"
+                          style={{ fontSize: "13px", fontWeight: "500" }}
+                        >
+                          {job.role}
+                        </div>
+                      </div>
+                      {(job.totalPayable != null || job.jobAmount != null) && (
+                        <div className="text-end flex-shrink-0">
+                          <div
+                            className="fw-bold"
+                            style={{ fontSize: "16px", color: "#0A7C6E" }}
+                          >
+                            {formatAmount(job.totalPayable ?? job.jobAmount)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Middle Row: Date & Time */}
+                    <div
+                      className="d-flex flex-wrap align-items-center gap-3 my-2 pt-2 pb-1 border-top border-light"
+                      style={{ fontSize: "12.5px" }}
+                    >
+                      <div className="d-flex align-items-center gap-1 text-muted">
+                        <i
+                          className="fa-regular fa-calendar-days"
+                          style={{ color: "#0A7C6E" }}
+                        ></i>
+                        <span className="fw-semibold text-secondary">
+                          {job.shiftDate || job.formattedDate || "Date TBA"}
+                        </span>
+                      </div>
+                      <div className="d-flex align-items-center gap-1 text-muted">
+                        <i
+                          className="fa-regular fa-clock"
+                          style={{ color: "#0A7C6E" }}
+                        ></i>
+                        <span className="fw-semibold text-secondary">
+                          {job.timeWindow || job.pillText || "Time TBA"}
+                        </span>
+                      </div>
+                      {job.hours > 0 && (
+                        <div className="d-flex align-items-center gap-1 text-muted">
+                          <i
+                            className="fa-solid fa-hourglass-half"
+                            style={{ color: "#0A7C6E" }}
+                          ></i>
+                          <span className="fw-semibold text-secondary">
+                            {job.hours} {job.hours === 1 ? "hr" : "hrs"}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bottom Row: Details and Pay Now buttons */}
+                    <div className="d-flex justify-content-end align-items-center gap-2 pt-2 border-top border-light flex-nowrap">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary rounded-pill fw-semibold d-inline-flex align-items-center justify-content-center"
+                        style={{ fontSize: "12px", height: "34px", padding: "0 18px", minWidth: "96px" }}
+                        onClick={() => {
+                          setShowPaymentAlertModal(false);
+                          openModal(job);
+                        }}
+                      >
+                        Details
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm rounded-pill fw-bold shadow-sm d-inline-flex align-items-center justify-content-center text-white"
+                        style={{
+                          fontSize: "12px",
+                          height: "34px",
+                          padding: "0 18px",
+                          minWidth: "96px",
+                          backgroundColor: "#0A7C6E",
+                          borderColor: "#0A7C6E",
+                        }}
+                        onClick={() => handlePayNow(job)}
+                      >
+                        <i className="fa-solid fa-credit-card me-1"></i> Pay Now
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div
+              className="modal-footer-premium p-3 bg-light border-top d-flex justify-content-end align-items-center"
+              style={{ borderRadius: "0 0 22px 22px" }}
+            >
+              <button
+                type="button"
+                className="btn btn-secondary px-4 rounded-pill fw-semibold shadow-sm"
+                style={{ fontSize: "13px" }}
+                onClick={handleClosePaymentAlertModal}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- EDIT JOB TIMES MODAL (Admin & Client) ---------- */}
+      {canManageJob && editModalApp && (
+        <div
+          className="modal-overlay modal-overlay-anim"
+          onClick={() => !actionLoading && closeEditModal()}
+          style={{
+            zIndex: 99999,
+            backgroundColor: "rgba(10,20,35,0.65)",
+            position: "fixed",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            className="modal-content modal-content-anim border-0"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "580px",
+              background: "#ffffff",
+              borderRadius: "20px",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              boxShadow: "0 25px 60px -15px rgba(10,25,48,0.45)",
+            }}
+          >
+            {/* Header */}
+            <div
+              className="modal-header-custom d-flex justify-content-between align-items-center"
+              style={{ padding: "20px 24px" }}
+            >
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: "19px",
+                  fontWeight: "700",
+                  letterSpacing: "0.2px",
+                  color: "#fff",
+                  position: "relative",
+                  zIndex: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                }}
+              >
+                <i className="fa-solid fa-pen-to-square" style={{ color: "#2dd4bf" }}></i>
+                Edit Job Times
+              </h3>
+              <button
+                onClick={() => !actionLoading && closeEditModal()}
+                className="modal-close-btn"
+                disabled={actionLoading}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="modal-body" style={{ padding: "24px", overflowY: "auto", maxHeight: "75vh" }}>
+              {/* Job summary chip */}
+              <div
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "14px",
+                  padding: "14px 18px",
+                  marginBottom: "20px",
+                }}
+              >
+                <div className="d-flex justify-content-between align-items-center mb-1">
+                  <h6 className="fw-bold mb-0 text-dark" style={{ fontSize: "15px" }}>
+                    {editModalApp.title}
+                  </h6>
+                  <span
+                    className="badge"
+                    style={{
+                      backgroundColor: "rgba(10, 124, 110, 0.1)",
+                      color: "#0A7C6E",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    #{editModalApp.id} • {editModalApp.status}
+                  </span>
+                </div>
+                <div className="text-muted small">
+                  <i className="fa-solid fa-location-dot me-1 text-danger"></i>
+                  {editModalApp.location}
+                </div>
+              </div>
+
+              {!editTimeBreakdown ? (
+                <>
+                  {/* Form fields */}
+                  <div className="row g-3">
+                    <div className="col-12">
+                      <label className="form-label fw-bold small text-muted text-uppercase mb-1">
+                        <i className="fa-regular fa-calendar-days me-1 text-teal"></i> Shift Date
+                      </label>
+                      <DatePicker
+                        selected={editForm.date}
+                        onChange={(date) => setEditForm((prev) => ({ ...prev, date }))}
+                        dateFormat="dd/MM/yyyy"
+                        className="form-control"
+                        placeholderText="Select date"
+                      />
+                    </div>
+
+                    <div className="col-sm-6">
+                      <label className="form-label fw-bold small text-muted text-uppercase mb-1">
+                        <i className="fa-regular fa-clock me-1 text-teal"></i> Start Time (24h)
+                      </label>
+                      <input
+                        type="time"
+                        className="form-control fw-semibold"
+                        value={editForm.startTime}
+                        onChange={(e) =>
+                          setEditForm((prev) => ({ ...prev, startTime: e.target.value }))
+                        }
+                        style={{ height: "42px", fontSize: "14px" }}
+                      />
+                    </div>
+
+                    <div className="col-sm-6">
+                      <label className="form-label fw-bold small text-muted text-uppercase mb-1">
+                        <i className="fa-regular fa-clock me-1 text-teal"></i> End Time (24h)
+                      </label>
+                      <input
+                        type="time"
+                        className="form-control fw-semibold"
+                        value={editForm.endTime}
+                        onChange={(e) =>
+                          setEditForm((prev) => ({ ...prev, endTime: e.target.value }))
+                        }
+                        style={{ height: "42px", fontSize: "14px" }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Live duration calculation banner */}
+                  {computedEditDuration && (
+                    <div
+                      className="mt-3 p-3 rounded-3 d-flex align-items-center justify-content-between flex-wrap gap-2"
+                      style={{
+                        background: computedEditDuration.isOvernight ? "#eff6ff" : "#f0fdf9",
+                        border: `1px solid ${computedEditDuration.isOvernight ? "#bfdbfe" : "#a7f3d0"}`,
+                      }}
+                    >
+                      <div className="d-flex align-items-center gap-2">
+                        <i
+                          className={`fa-solid ${
+                            computedEditDuration.isOvernight ? "fa-moon text-primary" : "fa-clock text-teal"
+                          }`}
+                        ></i>
+                        <span className="small fw-bold text-dark">
+                          Duration: {computedEditDuration.hours} hrs
+                          {computedEditDuration.isOvernight && " (Overnight Shift)"}
+                        </span>
+                      </div>
+                      {computedEditDuration.hours < 4 && (
+                        <span className="badge bg-warning-subtle text-warning border border-warning-subtle" style={{ fontSize: "11px" }}>
+                          Min 4 hrs recommended
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Payment breakdown — shown once, before the time change is actually applied */
+                <div>
+                  <div className="d-flex justify-content-between mb-3">
+                    <div>
+                      <div className="text-muted small">Current time</div>
+                      <div className="fw-bold">{editTimeBreakdown.old_start} – {editTimeBreakdown.old_end}</div>
+                    </div>
+                    <div className="text-end">
+                      <div className="text-muted small">New time</div>
+                      <div className="fw-bold" style={{ color: "#0A7C6E" }}>
+                        {editTimeBreakdown.new_start} – {editTimeBreakdown.new_end}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "16px 18px" }}>
+                    <div className="fw-bold small text-dark mb-2">Payment breakdown</div>
+                    {(() => {
+                      const oldPay = editTimeBreakdown.old_payment || {};
+                      const newPay = editTimeBreakdown.new_payment || {};
+                      const isContractorFlow = editTimeBreakdown.billing_flow === "contractor_invoice";
+                      const fmt = (n) => (n === null || n === undefined || n === "" ? "—" : `$${Number(n).toFixed(2)}`);
+                      const Row = ({ label, oldVal, newVal }) => {
+                        const changed = Number(oldVal ?? 0) !== Number(newVal ?? 0);
+                        return (
+                          <div className="d-flex justify-content-between small py-1" style={{ borderBottom: "1px solid #eef2f7" }}>
+                            <span className="text-muted">{label}</span>
+                            <span className="fw-semibold">
+                              {changed ? (
+                                <>
+                                  <span className="text-muted text-decoration-line-through me-2">{fmt(oldVal)}</span>
+                                  <span style={{ color: "#0A7C6E" }}>{fmt(newVal)}</span>
+                                </>
+                              ) : (
+                                fmt(newVal)
+                              )}
+                            </span>
+                          </div>
+                        );
+                      };
+
+                      if (isContractorFlow) {
+                        return (
+                          <>
+                            <Row label="Subtotal" oldVal={oldPay.gross_subtotal} newVal={newPay.gross_subtotal} />
+                            <Row label="Discount" oldVal={oldPay.discount} newVal={newPay.discount} />
+                            <Row label="Net (ex. GST)" oldVal={oldPay.net_taxable} newVal={newPay.net_taxable} />
+                            <Row label="GST" oldVal={oldPay.gst_amount} newVal={newPay.gst_amount} />
+                            <Row label="Total payable" oldVal={oldPay.total_payable} newVal={newPay.total_payable} />
+                          </>
+                        );
+                      }
+
+                      if (newPay.grand_total !== undefined) {
+                        return (
+                          <>
+                            <Row label="Subtotal" oldVal={oldPay.base_total} newVal={newPay.base_total} />
+                            <Row label="Discount" oldVal={oldPay.discount} newVal={newPay.discount} />
+                            <Row label="GST" oldVal={oldPay.service_fee} newVal={newPay.service_fee} />
+                            <Row label="Grand total" oldVal={oldPay.grand_total} newVal={newPay.grand_total} />
+                            <Row label="Amount charged" oldVal={oldPay.amount_charged} newVal={newPay.amount_charged} />
+                            <Row label="Balance due" oldVal={oldPay.balance} newVal={newPay.balance} />
+                          </>
+                        );
+                      }
+
+                      return <Row label="Job amount" oldVal={editTimeBreakdown.old_job_amount} newVal={editTimeBreakdown.new_job_amount} />;
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div
+              className="modal-footer-custom d-flex justify-content-end align-items-center gap-2"
+              style={{ padding: "16px 24px", borderTop: "1px solid #eef2f7" }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (actionLoading) return;
+                  if (editTimeBreakdown) {
+                    setEditTimeBreakdown(null);
+                    setPendingEditPayload(null);
+                  } else {
+                    closeEditModal();
+                  }
+                }}
+                className="btn btn-light px-4 rounded-pill fw-semibold"
+                disabled={actionLoading}
+              >
+                {editTimeBreakdown ? "Back" : "Cancel"}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEdit}
+                className="btn btn-primary-custom px-4 rounded-pill fw-semibold shadow-sm"
+                disabled={actionLoading}
+              >
+                {actionLoading ? (
+                  <>
+                    <i className="fa-solid fa-spinner fa-spin me-2"></i> Saving...
+                  </>
+                ) : editTimeBreakdown ? (
+                  <>
+                    <i className="fa-solid fa-check me-1"></i> Confirm & Update
+                  </>
+                ) : (
+                  <>
+                    <i className="fa-solid fa-check me-1"></i> Save Changes
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- DELETE JOB CONFIRMATION MODAL (Admin & Client) ---------- */}
+      {canManageJob && deleteModalApp && (
+        <div
+          className="modal-overlay modal-overlay-anim"
+          onClick={() => !actionLoading && setDeleteModalApp(null)}
+          style={{
+            zIndex: 99999,
+            backgroundColor: "rgba(10,20,35,0.65)",
+            position: "fixed",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            className="modal-content modal-content-anim border-0"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "520px",
+              background: "#ffffff",
+              borderRadius: "20px",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              boxShadow: "0 25px 60px -15px rgba(10,25,48,0.45)",
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                background: "linear-gradient(120deg, #450a0a, #7f1d1d 70%, #991b1b)",
+                padding: "20px 24px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: "19px",
+                  fontWeight: "700",
+                  letterSpacing: "0.2px",
+                  color: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                }}
+              >
+                <i className="fa-solid fa-triangle-exclamation" style={{ color: "#fca5a5" }}></i>
+                Delete / Cancel Job
+              </h3>
+              <button
+                onClick={() => !actionLoading && setDeleteModalApp(null)}
+                className="modal-close-btn"
+                disabled={actionLoading}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="modal-body" style={{ padding: "24px" }}>
+              <p className="text-dark fw-medium mb-3" style={{ fontSize: "14.5px" }}>
+                Are you sure you want to cancel and delete this job?
+              </p>
+
+              {/* Warning card */}
+              <div
+                className="p-3 mb-3 rounded-3"
+                style={{
+                  background: "#fff1f2",
+                  border: "1px solid #fecdd3",
+                  color: "#9f1239",
+                  fontSize: "13px",
+                }}
+              >
+                <i className="fa-solid fa-circle-exclamation me-2"></i>
+                This action will cancel the job hold/payment intent and permanently remove this shift.
+              </div>
+
+              {/* Job details box */}
+              <div
+                className="p-3 rounded-3"
+                style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}
+              >
+                <div className="fw-bold text-dark mb-1" style={{ fontSize: "14px" }}>
+                  {deleteModalApp.title}
+                </div>
+                <div className="text-muted small mb-2">
+                  <i className="fa-solid fa-location-dot me-1 text-danger"></i>
+                  {deleteModalApp.location}
+                </div>
+                <div className="d-flex justify-content-between small text-muted pt-2 border-top">
+                  <span>
+                    <i className="fa-regular fa-calendar-days me-1"></i>
+                    {deleteModalApp.formattedDate}
+                  </span>
+                  <span>
+                    <i className="fa-regular fa-clock me-1"></i>
+                    {deleteModalApp.timeWindow || deleteModalApp.pillText}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div
+              className="modal-footer-custom d-flex justify-content-end align-items-center gap-2"
+              style={{ padding: "16px 24px", borderTop: "1px solid #eef2f7" }}
+            >
+              <button
+                type="button"
+                onClick={() => !actionLoading && setDeleteModalApp(null)}
+                className="btn btn-light px-4 rounded-pill fw-semibold"
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="btn btn-danger px-4 rounded-pill fw-semibold shadow-sm"
+                style={{ backgroundColor: "#e11d48", borderColor: "#e11d48" }}
+                disabled={actionLoading}
+              >
+                {actionLoading ? (
+                  <>
+                    <i className="fa-solid fa-spinner fa-spin me-2"></i> Deleting...
+                  </>
+                ) : (
+                  <>
+                    <i className="fa-solid fa-trash-can me-1"></i> Yes, Delete Job
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

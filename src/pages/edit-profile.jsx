@@ -1,0 +1,3421 @@
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import useFetch from "../hooks/useFetch";
+import useSubmit from "../hooks/useSubmit";
+import { useSelector, useDispatch } from "react-redux";
+import { setUser } from "../store/slices/authSlice";
+import Loader from "../components/Loader";
+import DocumentTable from "../components/DocumentTable";
+import InductionTab from "../components/InductionTab";
+import ProfileForm from "../components/ProfileForm";
+import AvatarUpload from "../components/AvatarUpload";
+import SettingsHeaderContent from "../components/SettingsHeaderContent";
+import { apiURL } from "../utils/exports";
+import { resolveProfileImageUrl } from "../utils/profileImage";
+import { toast } from "react-toastify";
+import StaffOnboardingForms from "../components/StaffOnboardingForms";
+import ContractorRatesView from "./ContractorRatesView";
+import { Link } from "react-router-dom";
+import {
+  validateDocument,
+  isDocumentValidationApplicable,
+  isDocumentNumberInText,
+  isExpiryDateInText,
+  isPendingRenewalExpiry,
+  extractDocumentText,
+} from "../utils/documentValidator";
+
+const PremiumModal = ({ open, onClose, children, title, wide = false }) => {
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [open]);
+
+  if (!open) return null;
+  return (
+    <div
+      className="modal-overlay-premium"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className={`modal-content-premium ${wide ? "modal-wide" : ""}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header-premium">
+          {title && <h3 className="modal-title">{title}</h3>}
+          <button className="modal-close-btn" onClick={onClose} type="button">
+            <i className="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        <div className="modal-body">{children}</div>
+      </div>
+      <style>{`
+        :root {
+          --modal-navy-950: #0a1930;
+          --modal-navy-900: #0e2340;
+          --modal-teal: #0A7C6E;
+          --modal-teal-dark: #075e53;
+          --modal-line: #e2e8f0;
+          --modal-surface: #ffffff;
+          --modal-text: #1e293b;
+          --modal-muted: #64748b;
+        }
+        .modal-overlay-premium {
+          position: fixed;
+          inset: 0;
+          background: rgba(10, 20, 35, 0.62);
+          backdrop-filter: blur(6px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 9999;
+          padding: 1.5rem;
+          animation: modalFadeIn 0.25s ease-out;
+        }
+        @keyframes modalFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        .modal-content-premium {
+          background: var(--modal-surface);
+          border-radius: 22px;
+          box-shadow: 0 30px 60px -18px rgba(10, 25, 48, 0.5);
+          max-width: 600px;
+          width: 100%;
+          max-height: 90vh;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          animation: modalPopIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .modal-wide { max-width: 900px; }
+        @keyframes modalPopIn {
+          from { opacity: 0; transform: scale(0.96) translateY(10px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .modal-header-premium {
+          position: relative;
+          background: linear-gradient(120deg, var(--modal-navy-950), var(--modal-navy-900) 70%, #10345a);
+          padding: 16px 20px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-shrink: 0;
+          overflow: hidden;
+        }
+        .modal-header-premium::after {
+          content: "";
+          position: absolute;
+          top: -30px;
+          right: -30px;
+          width: 120px;
+          height: 120px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(10,124,110,0.5), transparent 70%);
+          pointer-events: none;
+        }
+        .modal-title {
+          margin: 0;
+          font-size: 19px;
+          font-weight: 700;
+          letter-spacing: 0.2px;
+          color: #fff;
+          position: relative;
+          z-index: 1;
+        }
+        .modal-close-btn {
+          position: relative;
+          z-index: 2;
+          width: 34px;
+          height: 34px;
+          border-radius: 50%;
+          border: none;
+          background: rgba(255,255,255,0.08);
+          color: #fff;
+          font-size: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: background 0.2s, transform 0.2s;
+          flex-shrink: 0;
+          margin-left: auto;
+        }
+        .modal-close-btn:hover {
+          background: rgba(255,255,255,0.18);
+          transform: rotate(90deg);
+        }
+        .modal-close-btn:focus-visible {
+          outline: 2px solid #6ee7d8;
+          outline-offset: 2px;
+        }
+        .modal-body {
+          padding: 24px;
+          overflow-y: auto;
+          overflow-x: hidden;
+          flex: 1;
+          color: var(--modal-text);
+        }
+        @media (max-width: 576px) {
+          .modal-overlay-premium { padding: 0.75rem; }
+          .modal-body { padding: 16px; }
+          .modal-content-premium { border-radius: 18px; }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+const INITIAL_CARD_STATE = {
+  card_holder_name: "",
+  card_number: "",
+  expiry_month: "",
+  expiry_year: "",
+  cvv: "",
+};
+
+const INITIAL_FORM_STATE = {
+  name: "",
+  email: "",
+  phone: "",
+  address: "",
+  origin_country: "",
+  abn: "",
+  acn: "",
+  gender: "",
+  city: "",
+  state: "",
+  country: "",
+  coordinates: "",
+  staff_document_type: "",
+  security_license_no: "",
+  date_of_birth: "",
+  company_name: "",
+  bank_details: [],
+  states_allowed: [],
+  is_control_room_license: 0,
+};
+
+const DOC_TYPES = [
+  { value: "Passport", label: "Passport" },
+  { value: "Visa", label: "Visa" },
+  { value: "Driver License Front", label: "Driver License (Front)" },
+  { value: "Driver License Back", label: "Driver License (Back)" },
+  { value: "Security License", label: "Security License" },
+  { value: "Working With Children Check", label: "Working with Children Check (WWCC)" },
+  { value: "Employment Application Form", label: "Employment Application Form" },
+  { value: "TFN Declaration", label: "TFN Declaration" },
+  { value: "Superannuation Form", label: "Superannuation Form" },
+  { value: "First Aid Certificate", label: "First Aid Certificate" },
+  { value: "CPR Certificate", label: "CPR Certificate" },
+  { value: "Vaccination Certificate", label: "Vaccination Certificate" },
+  { value: "Citizen Ship", label: "Citizen Ship Certificate" },
+  { value: "Medicare", label: "Medicare Certificate" },
+  { value: "Birth Certificate", label: "Birth Certificate" },
+  { value: "Security Master License", label: "Security Master License" },
+  { value: "Public Liability", label: "Public Liability" },
+  { value: "Workcover", label: "Workcover" },
+  { value: "Security Industry Membership Certificate", label: "Security Industry Membership Certificate" },
+  { value: "Security Industry Membership certificate", label: "Security Industry Membership certificate" },
+  { value: "Labour Hire", label: "Labour Hire" },
+  { value: "ASIC Report", label: "ASIC Report" },
+  { value: "White Card", label: "White Card" },
+  { value: "Working with Children Check", label: "Working with Children Check" },
+];
+
+
+
+
+// ========== DATE HELPERS (DD/MM/YYYY everywhere) ==========
+const isoToDisplay = (val) => {
+  if (!val) return "";
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) return val;
+  const match = val.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    // eslint-disable-next-line
+    const [_, y, m, d] = match;
+    return `${d}/${m}/${y}`;
+  }
+  return val;
+};
+
+const checkIsDocSelfExpiry = (category, fallbackState) => {
+  const cat = (category || "").trim().toLowerCase();
+  if (cat) {
+    if (
+      cat === "tas_document" ||
+      cat === "tas" ||
+      cat === "tasmania" ||
+      cat === "sa_document" ||
+      cat === "sa" ||
+      cat === "south australia"
+    ) {
+      return true;
+    }
+    if (
+      cat === "contractor_document" ||
+      cat === "vic" ||
+      cat === "victoria" ||
+      cat === "nsw_document" ||
+      cat === "nsw" ||
+      cat === "new south wales" ||
+      cat === "qld_document" ||
+      cat === "qld" ||
+      cat === "queensland" ||
+      cat === "wa_document" ||
+      cat === "wa" ||
+      cat === "western australia" ||
+      cat === "act_document" ||
+      cat === "act" ||
+      cat === "australian capital territory" ||
+      cat === "nt_document" ||
+      cat === "nt" ||
+      cat === "northern territory"
+    ) {
+      return false;
+    }
+  }
+
+  const raw = (fallbackState || "").trim().toLowerCase();
+  return (
+    raw === "tas" ||
+    raw === "tasmania" ||
+    raw === "sa" ||
+    raw === "south australia"
+  );
+};
+
+const getNormalizedDocInfo = (docName, docType) => {
+  const norm = (docName || docType || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const isSecMasterLicense =
+    norm.includes("securitymasterlicense") ||
+    norm.includes("securitymasterlicence") ||
+    norm.includes("masterlicense") ||
+    norm.includes("masterlicence");
+  const isSecLicense =
+    !isSecMasterLicense &&
+    (norm.includes("securitylicense") ||
+      norm.includes("securitylicence") ||
+      norm.includes("seclic"));
+  return {
+    isSecLicense,
+    isSecMasterLicense,
+    isAnySecurityLicense: isSecLicense || isSecMasterLicense,
+  };
+};
+
+const normalizeToDisplay = (dateStr) => {
+  if (!dateStr) return "";
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr;
+  if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) return dateStr.replace(/-/g, "/");
+  const iso = isoToDisplay(dateStr);
+  if (iso !== dateStr) return iso;
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) {
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    return `${day}/${month}/${d.getFullYear()}`;
+  }
+  return dateStr;
+};
+
+function capitalizeWords(str) {
+  return str
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+const getExpiryStatus = (dateString) => {
+  if (!dateString) return "no-expiry";
+  let expiry;
+  const ddMatch = dateString.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (ddMatch) {
+    const [, d, m, y] = ddMatch;
+    expiry = new Date(y, m - 1, d);
+  } else {
+    const isoMatch = dateString.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) {
+      const [, y, m, d] = isoMatch;
+      expiry = new Date(y, m - 1, d);
+    } else {
+      expiry = new Date(dateString);
+    }
+  }
+  if (isNaN(expiry.getTime())) return "no-expiry";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffDays = (expiry - today) / (1000 * 60 * 60 * 24);
+  if (diffDays < 0) return "expired";
+  if (diffDays <= 30) return "expiring";
+  return "valid";
+};
+
+const DOC_LABEL_MAP = {
+  passport: "Passport",
+  visa: "Visa",
+  driver_license_front: "Driver License (Front)",
+  driver_license_back: "Driver License (Back)",
+  security_license: "Security License",
+  working_with_children: "Working With Children Check (WWCC)",
+  employment_application: "Employment Application Form",
+  tfn_declaration: "TFN Declaration",
+  superannuation: "Superannuation Form",
+  first_aid: "First Aid Certificate",
+  cpr: "CPR Certificate",
+  vaccination: "Vaccination Certificate",
+  citizen_ship: "Citizen Ship Certificate",
+  medicare: "Medicare Certificate",
+  birth_certificate: "Birth Certificate",
+  security_master_license: "Security Master License",
+  public_liability: "Public Liability",
+  workcover: "Workcover",
+  security_membership: "Security Industry Membership Certificate",
+  labour_hire: "Labour Hire",
+  asic_report: "ASIC Report",
+};
+
+
+const getStaffDocPoints = (doc) => {
+  if (!doc) return 0;
+  const rawKey = (doc.document_type || doc.document_name || "").toLowerCase().trim();
+  const normalizedKey = rawKey.replace(/[^a-z0-9]/g, "");
+
+  if (normalizedKey.includes("passport")) return 70;
+  if (normalizedKey.includes("citizenship") || normalizedKey.includes("citizenship")) return 70;
+  if (normalizedKey.includes("medicare")) return 25;
+  if (normalizedKey.includes("birthcertificate")) return 25;
+  if (normalizedKey.includes("driverlicensefront")) return 70;
+  if (normalizedKey.includes("driverlicenseback")) return 0;
+  if (normalizedKey.includes("securitylicense")) return 40;
+  if (normalizedKey.includes("workingwithchildren") || normalizedKey.includes("wwcc")) return 0;
+  if (normalizedKey.includes("firstaid")) return 0;
+  if (normalizedKey.includes("cpr")) return 0;
+  if (normalizedKey.includes("visa")) return 0;
+
+  return 0;
+};
+
+const STATE_CATEGORY_LABELS_MAP = {
+  contractor_document: "Victoria",
+  nsw_document: "New South Wales",
+  qld_document: "Queensland",
+  tas_document: "Tasmania",
+  wa_document: "Western Australia",
+  sa_document: "South Australia",
+  act_document: "Australian Capital Territory",
+  nt_document: "Northern Territory",
+};
+
+const getDocDisplayName = (doc, showStateLabel = false) => {
+  const baseName = DOC_LABEL_MAP[doc.document_type] || doc.document_name || doc.document_type || "Document";
+  const stateLabel = STATE_CATEGORY_LABELS_MAP[doc.document_category];
+  if (showStateLabel && stateLabel && doc.document_category !== "company_document") {
+    return `${baseName} (${stateLabel})`;
+  }
+  return baseName;
+};
+
+
+export default function EditProfile() {
+  const dispatch = useDispatch();
+  const { userdata } = useSelector((state) => state.auth);
+  const userType = userdata?.data?.user_type || userdata?.user_type;
+  const userId = userdata?.data?.id || userdata?.id;
+  const updateUserId = userType === "admin" ? 1 : userId;
+  const isverified =
+    userdata?.data?.customer?.verify_profile ||
+    userdata?.customer?.verify_profile;
+
+  const isSelectingAddress = useRef(false);
+
+  const endpoint = useMemo(
+    () => (userId ? `api/user-edit/${userId}` : null),
+    [userId]
+  );
+
+  const {
+    data: profileData,
+    loading: fetchLoading,
+    refetch,
+  } = useFetch(endpoint, { isAuth: true });
+
+  const parentContractorId = Number(
+    profileData?.data?.user_id ??
+    profileData?.user_id ??
+    userdata?.data?.user_id ??
+    userdata?.user_id ??
+    0
+  );
+  const isStaffooStaff = userType === "staff" && parentContractorId === 1;
+
+  const { submit, loading: submitLoading } = useSubmit({ isAuth: true });
+  const { submit: submitSecurityLicense } = useSubmit({
+    isAuth: true,
+    BaseURL: "https://apis.thescouts.com.au/",
+  });
+
+  const { submit: uploadFile, loading: uploadLoading } = useSubmit({ isAuth: true });
+  const { submit: phoneSubmit, loading: phoneSubmitLoading } = useSubmit({ isAuth: true });
+
+  const [profilePhoto, setProfilePhoto] = useState(null);
+  const [formData, setFormData] = useState(INITIAL_FORM_STATE);
+  const [activeTab, setActiveTab] = useState("personal");
+  const [emailServerError, setEmailServerError] = useState("");
+
+  const isOperatingState = useCallback((stateStr) => {
+    if (!stateStr) return true;
+    const s = String(stateStr).trim().toLowerCase();
+    return s === "vic" || s === "victoria" || s === "nsw" || s === "new south wales";
+  }, []);
+
+  const isStaffooOutOfState = Boolean(isStaffooStaff && formData.state && !isOperatingState(formData.state));
+
+  const userStateDisplay = useMemo(() => {
+    if (!formData.state) return "";
+    const s = String(formData.state).trim().toLowerCase();
+    const map = {
+      vic: "Victoria",
+      victoria: "Victoria",
+      nsw: "New South Wales",
+      "new south wales": "New South Wales",
+      qld: "Queensland",
+      queensland: "Queensland",
+      wa: "Western Australia",
+      "western australia": "Western Australia",
+      sa: "South Australia",
+      "south australia": "South Australia",
+      tas: "Tasmania",
+      tasmania: "Tasmania",
+      act: "Australian Capital Territory",
+      "australian capital territory": "Australian Capital Territory",
+      nt: "Northern Territory",
+      "northern territory": "Northern Territory",
+    };
+    return map[s] || formData.state;
+  }, [formData.state]);
+
+  const [isAddingCard, setIsAddingCard] = useState(false);
+  const [cardForm, setCardForm] = useState(INITIAL_CARD_STATE);
+  const [editingCardIndex, setEditingCardIndex] = useState(null);
+
+  const [showCardDeleteModal, setShowCardDeleteModal] = useState(false);
+  const [cardToDeleteIndex, setCardToDeleteIndex] = useState(null);
+
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneStep, setPhoneStep] = useState("input");
+  const [newPhoneInput, setNewPhoneInput] = useState("");
+  const [phoneOtp, setPhoneOtp] = useState("");
+  const [phoneChangeError, setPhoneChangeError] = useState(null);
+  const [phoneChangeSuccess, setPhoneChangeSuccess] = useState(false);
+
+  const [showChargeRateModal, setShowChargeRateModal] = useState(false);
+  const [showCoverJobsModal, setShowCoverJobsModal] = useState(false);
+
+  const [showDocModal, setShowDocModal] = useState(false);
+  const [docValidating, setDocValidating] = useState(false);
+  const [docValidationStatus, setDocValidationStatus] = useState("");
+  const [docValidationError, setDocValidationError] = useState(null);
+  const [showErrors, setShowErrors] = useState(false);
+  const [showDocErrors, setShowDocErrors] = useState(false);
+  const docErrorRef = useRef(null);
+
+  useEffect(() => {
+    if (showDocErrors && docErrorRef.current) {
+      docErrorRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [showDocErrors]);
+  const [initialStatesAllowed, setInitialStatesAllowed] = useState([]);
+  const [initialAdminFormData, setInitialAdminFormData] = useState(null);
+  const [initialPersonalFormData, setInitialPersonalFormData] = useState(null);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [verifyingDoc, setVerifyingDoc] = useState(false);
+  const [dragActiveField, setDragActiveField] = useState(null);
+  const [docForm, setDocForm] = useState({
+    notes: "",
+    no: false,
+    exp: false,
+    document_no: "",
+    document_expiry: "",
+    file: null,
+    file_path: "",
+    file_url: "",
+    document_name: "",
+    is_verified: false,
+    working_rights_file_path: "",
+    working_rights_file_url: "",
+    show_working_rights: false,
+    work_entitlement: "",
+    extracted_text: "",
+  });
+
+  const isPhoneVerified = Boolean(
+    userdata?.data?.phone_verified ??
+    userdata?.phone_verified ??
+    profileData?.data?.phone_verified
+  );
+
+  const getMissingFields = useCallback((data) => {
+    if (!data) return [];
+    const missing = [];
+    if (userType !== "admin" && !data.name) missing.push("Name");
+    if (userType !== "admin" && !data.email) missing.push("Email");
+    if (userType !== "admin" && !data.phone) missing.push("Phone");
+    if (!data.address) missing.push("Address");
+    if (userType === "staff") {
+      if (!data.security_license_no) missing.push("Security License No");
+      if (isStaffooStaff) {
+        if (!data.staff_document_type) missing.push("Visa Status");
+        if (!data.date_of_birth) missing.push("Date of Birth");
+        if (!data.origin_country) missing.push("Country of Birth");
+      }
+    }
+    if (userType === "contractor" && !data.security_license_no)
+      missing.push("Security Master License No");
+    if ((userType === "contractor" || userType === "admin") && !data.company_name)
+      missing.push("Company Name");
+    if ((userType === "contractor" || userType === "admin") && (!data.states_allowed || data.states_allowed.length === 0))
+      missing.push("States You Operate In");
+    return missing;
+  }, [userType, isStaffooStaff]);
+  const missingFields = getMissingFields(formData);
+
+  useEffect(() => {
+    if (!profileData?.data) return;
+
+    const currentUserType = profileData.data.user_type || userType;
+    if (currentUserType === "contractor" && (profileData.charge_rate === true || profileData.charge_rate === "true" || profileData.charge_rate === 1)) {
+      const storageKey = `chargeRateModalShown_${profileData.data.id}`;
+      if (!sessionStorage.getItem(storageKey)) {
+        setShowChargeRateModal(true);
+        sessionStorage.setItem(storageKey, "true");
+      }
+    }
+
+    const d = profileData.data;
+    const business = profileData.business || d.business || {};
+    const staff = d.staff || {};
+    const contractor = d.contractor || business.contractor || staff.contractor || {};
+    const customer = d.customer || {};
+
+    const rawBankDetails = customer.bank_details ?? d.bank_details ?? business.bank_details ?? null;
+
+    let existingBankDetails = [];
+    if (rawBankDetails) {
+      try {
+        const parsed =
+          typeof rawBankDetails === "string"
+            ? JSON.parse(rawBankDetails)
+            : rawBankDetails;
+        existingBankDetails = Array.isArray(parsed) ? parsed : [parsed];
+      } catch (e) {
+        console.error("Failed to parse bank details", e);
+      }
+    }
+
+    const admin = d.admin || {};
+    const rawStatesAllowed = userType === "admin"
+      ? (business.states_allowed ?? d.states_allowed ?? null)
+      : (d.states_allowed ?? contractor.states_allowed ?? business.states_allowed ?? admin.states_allowed ?? null);
+
+    let existingStatesAllowed = [];
+    if (rawStatesAllowed) {
+      try {
+        const parsed = typeof rawStatesAllowed === "string" ? JSON.parse(rawStatesAllowed) : rawStatesAllowed;
+        existingStatesAllowed = Array.isArray(parsed) ? parsed : [parsed];
+      } catch (e) {
+        console.error("Failed to parse states_allowed", e);
+      }
+    }
+
+    const rawControlRoom = staff.is_control_room_license ?? d.is_control_room_license ?? 0;
+    const controlRoomLicenseVal = (rawControlRoom === 1 || rawControlRoom === "1" || rawControlRoom === true) ? 1 : 0;
+
+    setFormData({
+      name: d.name || "",
+      email: d.email || "",
+      user_id: d.user_id || staff.user_id || "",
+      origin_country: staff.origin_country || d.origin_country || "",
+      abn: userType === "admin" ? (business.contractor?.abn || business.abn || d.abn || "") : (d.abn || business.abn || contractor.abn || ""),
+      acn: userType === "admin" ? (business.contractor?.acn || business.acn || d.acn || "") : (d.acn || business.acn || contractor.acn || ""),
+      phone: userType === "admin" ? (business.phone || business.contractor?.phone || d.phone || "") : (staff.phone || contractor.phone || customer.phone || business.phone || d.phone || ""),
+      address: userType === "admin" ? (business.address || d.address || "") : (d.address || staff.address || contractor.address || business.address || ""),
+      city: userType === "admin" ? (business.city || d.city || "") : (d.city || staff.city || contractor.city || business.city || ""),
+      state: userType === "admin" ? (business.state || d.state || "") : (d.state || staff.state || contractor.state || business.state || ""),
+      states_allowed: existingStatesAllowed || [],
+      country: userType === "admin" ? (business.country || d.country || "") : (d.country || staff.country || contractor.country || business.country || ""),
+      coordinates:
+        userType === "admin"
+          ? (business.coordinates || d.coordinates || "")
+          : (d.coordinates || staff.coordinates || contractor.coordinates || business.coordinates || ""),
+      gender: staff.gender || contractor.gender || d.gender || "",
+      staff_document_type: staff.staff_document_type || "",
+      security_license_no: staff.security_license_no || contractor.security_license_no || "",
+      is_control_room_license: controlRoomLicenseVal,
+      date_of_birth: isoToDisplay(d.date_of_birth || staff.date_of_birth || ""),
+      company_name:
+        userType === "admin"
+          ? (business.name || business.contractor?.company_name || business.company_name || d.company_name || "")
+          : (d.company_name || business.name || business.company_name || contractor.company_name || staff.company_name || customer.company_name || ""),
+      registration_number:
+        d.registration_number ||
+        contractor.registration_number ||
+        staff.registration_number ||
+        "",
+      bank_details: existingBankDetails,
+      profile_image:
+        userType === "admin"
+          ? (business.profile_image || business.contractor?.profile_image || d.profile_image || "")
+          : (d.profile_image || business.profile_image || staff.profile_image || contractor.profile_image || customer.profile_image || ""),
+    });
+
+    setInitialStatesAllowed(existingStatesAllowed || []);
+
+    if (userType === "admin") {
+      setInitialAdminFormData({
+        company_name: business.name || business.contractor?.company_name || business.company_name || d.company_name || "",
+        abn: business.contractor?.abn || business.abn || d.abn || "",
+        acn: business.contractor?.acn || business.acn || d.acn || "",
+        states_allowed: existingStatesAllowed || [],
+        address: business.address || d.address || "",
+        city: business.city || d.city || "",
+        state: business.state || d.state || "",
+        country: business.country || d.country || "",
+        coordinates: business.coordinates || d.coordinates || "",
+      });
+    }
+
+    setInitialPersonalFormData({
+      name: d.name || "",
+      email: d.email || "",
+      origin_country: staff.origin_country || d.origin_country || "",
+      abn: userType === "admin" ? (business.contractor?.abn || business.abn || d.abn || "") : (d.abn || business.abn || contractor.abn || ""),
+      acn: userType === "admin" ? (business.contractor?.acn || business.acn || d.acn || "") : (d.acn || business.acn || contractor.acn || ""),
+      phone: userType === "admin" ? (business.phone || business.contractor?.phone || d.phone || "") : (staff.phone || contractor.phone || customer.phone || business.phone || d.phone || ""),
+      address: userType === "admin" ? (business.address || d.address || "") : (d.address || staff.address || contractor.address || business.address || ""),
+      city: userType === "admin" ? (business.city || d.city || "") : (d.city || staff.city || contractor.city || business.city || ""),
+      state: userType === "admin" ? (business.state || d.state || "") : (d.state || staff.state || contractor.state || business.state || ""),
+      country: userType === "admin" ? (business.country || d.country || "") : (d.country || staff.country || contractor.country || business.country || ""),
+      coordinates:
+        userType === "admin"
+          ? (business.coordinates || d.coordinates || "")
+          : (d.coordinates || staff.coordinates || contractor.coordinates || business.coordinates || ""),
+      gender: staff.gender || contractor.gender || d.gender || "",
+      staff_document_type: staff.staff_document_type || "",
+      security_license_no: staff.security_license_no || contractor.security_license_no || "",
+      is_control_room_license: controlRoomLicenseVal,
+      date_of_birth: isoToDisplay(d.date_of_birth || staff.date_of_birth || ""),
+      company_name:
+        userType === "admin"
+          ? (business.name || business.contractor?.company_name || business.company_name || d.company_name || "")
+          : (d.company_name || business.name || business.company_name || contractor.company_name || staff.company_name || customer.company_name || ""),
+      registration_number:
+        d.registration_number ||
+        contractor.registration_number ||
+        staff.registration_number ||
+        "",
+    });
+
+    const profileImageUrl =
+      userType === "admin"
+        ? (business.profile_image || business.contractor?.profile_image || d.profile_image)
+        : (d.profile_image || business.profile_image || staff.profile_image || contractor.profile_image || customer.profile_image);
+
+    if (profileImageUrl) {
+      setProfilePhoto(resolveProfileImageUrl(profileImageUrl));
+    }
+  }, [profileData, userType]);
+
+  useEffect(() => {
+    if (!showChargeRateModal && profileData?.data && userdata) {
+      const currentUserType = profileData.data.user_type || userType;
+      const availableJobsCount = userdata?.data?.available_jobs_count || userdata?.available_jobs_count || 0;
+      const isActive = userdata?.data?.is_active || userdata?.is_active;
+
+      const currentUserId = Number(userdata?.data?.user_id ?? userdata?.user_id);
+
+      if (
+        availableJobsCount > 0 &&
+        (currentUserType === "contractor" || (currentUserType === "staff" && currentUserId === 1)) &&
+        isActive
+      ) {
+        const cjStorageKey = `coverJobsModalShown_${profileData.data.id}`;
+        if (!sessionStorage.getItem(cjStorageKey)) {
+          setShowCoverJobsModal(true);
+          sessionStorage.setItem(cjStorageKey, "true");
+        }
+      }
+    }
+  }, [showChargeRateModal, profileData, userdata, userType]);
+
+  // Sync Redux
+  useEffect(() => {
+    if (profileData?.success) {
+      dispatch(setUser({ userdata: profileData }));
+    }
+  }, [profileData, dispatch]);
+
+  useEffect(() => {
+    if (activeTab !== "personal" || fetchLoading) return;
+    let autocomplete;
+    let listener;
+
+    const initMap = () => {
+      const addressInput = document.getElementById("address");
+      if (!addressInput || !window.google || !window.google.maps) return;
+      if (addressInput.getAttribute("data-gmaps-initialized")) return;
+
+      autocomplete = new window.google.maps.places.Autocomplete(addressInput, {
+        fields: ["address_components", "geometry", "formatted_address"],
+        types: ["address"],
+        componentRestrictions: { country: "au" },
+      });
+
+      addressInput.setAttribute("data-gmaps-initialized", "true");
+
+      listener = autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+
+        if (!place.geometry) {
+          toast.error("Please select a valid address from the dropdown suggestions.");
+          return;
+        }
+
+        let newCity = "",
+          newState = "",
+          newCountry = "";
+
+        place.address_components?.forEach((c) => {
+          if (
+            c.types.includes("locality") ||
+            c.types.includes("postal_town") ||
+            c.types.includes("sublocality") ||
+            c.types.includes("administrative_area_level_2")
+          ) {
+            if (!newCity) newCity = c.long_name;
+          }
+          if (c.types.includes("administrative_area_level_1"))
+            newState = c.long_name;
+          if (c.types.includes("country")) newCountry = c.long_name;
+        });
+
+        isSelectingAddress.current = true;
+
+        setFormData((prev) => ({
+          ...prev,
+          address: place.formatted_address,
+          city: newCity || prev.city,
+          state: newState,
+          country: newCountry,
+          coordinates: `${place.geometry.location.lat()},${place.geometry.location.lng()}`,
+        }));
+
+        setTimeout(() => {
+          isSelectingAddress.current = false;
+        }, 500);
+      });
+    };
+
+    const checkGoogleMaps = setInterval(() => {
+      if (window.google && window.google.maps) {
+        clearInterval(checkGoogleMaps);
+        initMap();
+      }
+    }, 500);
+
+    return () => {
+      clearInterval(checkGoogleMaps);
+      if (listener && window.google)
+        window.google.maps.event.removeListener(listener);
+    };
+  }, [activeTab, fetchLoading]);
+
+  const STATE_CATEGORY_MAP = {
+    vic: "contractor_document",
+    nsw: "nsw_document",
+    qld: "qld_document",
+    tas: "tas_document",
+    wa: "wa_document",
+    sa: "sa_document",
+    act: "act_document",
+    nt: "nt_document",
+  };
+
+  const filteredDocuments = useMemo(() => {
+    const dataDocs = profileData?.data?.documents || [];
+    const bizDocs = profileData?.business?.documents || [];
+
+    let allDocs = [];
+
+    if (userType === "admin") {
+      const docMap = new Map();
+
+      // First add all template/business documents
+      bizDocs.forEach((doc) => {
+        const key = `${doc.document_category}_${doc.document_type || doc.document_name}`;
+        docMap.set(key, doc);
+      });
+
+      // Then override with uploaded documents from dataDocs
+      dataDocs.forEach((doc) => {
+        const key = `${doc.document_category}_${doc.document_type || doc.document_name}`;
+        docMap.set(key, doc);
+      });
+
+      allDocs = Array.from(docMap.values());
+    } else {
+      allDocs = dataDocs.length > 0 ? dataDocs : bizDocs;
+    }
+    const currentState = formData.state?.toLowerCase() || "";
+
+    if (userType === "contractor" || userType === "admin") {
+      const allowedCategories = (formData.states_allowed || [])
+        .map((code) => STATE_CATEGORY_MAP[code])
+        .filter(Boolean);
+
+      const commonContractorTypes = ["public_liability", "asic_report", "security_membership"];
+      const commonDocsMap = new Map();
+      const stateDocs = [];
+
+      allDocs.forEach((doc) => {
+        const normType = (doc.document_type || doc.document_name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+        const matchedCommon = commonContractorTypes.find((ct) => normType.includes(ct.replace(/[^a-z0-9]/g, "")));
+
+        if (matchedCommon) {
+          const existing = commonDocsMap.get(matchedCommon);
+          const hasFile = Boolean(doc.file || doc.file_path);
+          if (!existing || (!existing.file && !existing.file_path && hasFile)) {
+            commonDocsMap.set(matchedCommon, {
+              ...doc,
+              document_category: doc.document_category || "company_document",
+            });
+          }
+        } else if (allowedCategories.includes(doc.document_category)) {
+          stateDocs.push(doc);
+        }
+      });
+
+      return [...Array.from(commonDocsMap.values()), ...stateDocs];
+    }
+
+    if (userType === "staff") {
+      const contractorCategories = ["contractor_document", "nsw_document", "qld_document", "tas_document", "wa_document", "sa_document", "act_document", "nt_document"];
+      const contractorTypes = ["security_master_license", "public_liability", "workcover", "security_membership", "labour_hire", "asic_report"];
+      return allDocs.filter((doc) => {
+        if (doc.document_category && contractorCategories.includes(doc.document_category)) return false;
+        const normalizedType = (doc.document_type || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+        const normalizedName = (doc.document_name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (contractorTypes.some((t) => normalizedType.includes(t.replace(/[^a-z0-9]/g, "")) || normalizedName.includes(t.replace(/[^a-z0-9]/g, "")))) return false;
+        return true;
+      });
+    }
+
+    return allDocs.filter((doc) => {
+      if (doc.document_type === "labour_hire") {
+        const isTargetState = ["victoria", "vic", "queensland", "qld", "south australia", "sa"].some(
+          (targetState) => currentState.includes(targetState)
+        );
+        return isTargetState;
+      }
+      return true;
+    });
+    // eslint-disable-next-line
+  }, [profileData?.data?.documents, profileData?.business?.documents, formData.state, formData.states_allowed, userType]);
+
+  const docValidation = useMemo(() => {
+    const missingDocs = [];
+    const invalidDocs = [];
+
+    if (!filteredDocuments || filteredDocuments.length === 0) {
+      if (isStaffooStaff) {
+        return {
+          isValid: false,
+          missingDocs: [{ name: "Required Documents (Minimum 100 Points)" }],
+          invalidDocs: [],
+          totalPoints: 0,
+          requiredPoints: 100,
+        };
+      }
+      return { isValid: false, missingDocs: [{ name: "Required Documents" }], invalidDocs: [] };
+    }
+
+    const categories = new Set(filteredDocuments.map((d) => d.document_category).filter(Boolean));
+    const showStateLabel = categories.size > 1;
+
+    let totalStaffPoints = 0;
+    const countedDocTypes = new Set();
+
+    filteredDocuments.forEach((doc) => {
+      const name = getDocDisplayName(doc, showStateLabel);
+      const hasFile = Boolean(doc.file || doc.file_path);
+
+      if (!hasFile) {
+        missingDocs.push({ id: doc.id || name, name, doc });
+      } else {
+        let isInvalid = false;
+        let reason = "";
+
+        if (doc.document_expiry) {
+          const expiryStatus = getExpiryStatus(doc.document_expiry);
+          if (expiryStatus === "expired") {
+            isInvalid = true;
+            reason = `Expired document (${normalizeToDisplay(doc.document_expiry)})`;
+          }
+        }
+
+        if (
+          !isInvalid &&
+          (doc.status === "rejected" ||
+            doc.status === "invalid" ||
+            doc.status === "error" ||
+            doc.is_valid === false ||
+            doc.invalid ||
+            doc.error)
+        ) {
+          isInvalid = true;
+          reason = doc.error || doc.invalid_reason || doc.notes || "Invalid or incomplete document";
+        }
+
+        if (isInvalid) {
+          invalidDocs.push({ id: doc.id || name, name, reason: reason || "Invalid or incomplete document", doc });
+        } else {
+          // Valid uploaded document: add points for Staff-O staff only
+          if (isStaffooStaff) {
+            const rawType = (doc.document_type || doc.document_name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+            const pts = getStaffDocPoints(doc);
+            if (pts > 0 && !countedDocTypes.has(rawType)) {
+              countedDocTypes.add(rawType);
+              totalStaffPoints += pts;
+            }
+          }
+        }
+      }
+    });
+
+    if (isStaffooStaff) {
+      const isPointsValid = totalStaffPoints >= 100;
+      return {
+        isValid: isPointsValid,
+        missingDocs: isPointsValid ? [] : missingDocs,
+        invalidDocs: isPointsValid ? [] : invalidDocs,
+        totalPoints: totalStaffPoints,
+        requiredPoints: 100,
+      };
+    }
+
+    return {
+      isValid: missingDocs.length === 0 && invalidDocs.length === 0,
+      missingDocs,
+      invalidDocs,
+      totalPoints: 0,
+      requiredPoints: 0,
+    };
+  }, [filteredDocuments, isStaffooStaff]);
+
+  const handleAvatarUpload = useCallback(
+    async (file) => {
+      try {
+        if (!file || !userId) return;
+        const previewUrl = URL.createObjectURL(file);
+        setProfilePhoto(previewUrl);
+        const payload = new FormData();
+        payload.append("profile_image", file);
+        const res = await submit(`api/user-update/${updateUserId}`, payload, { method: "POST" });
+        if (res?.success) {
+          toast.success("Avatar updated successfully!");
+          refetch();
+        } else {
+          toast.error(res?.message || "Failed to save avatar");
+          setProfilePhoto(null);
+        }
+      } catch (err) {
+        console.warn("Avatar upload failed", err);
+        toast.error("Failed to upload avatar");
+        setProfilePhoto(null);
+      }
+    },
+    [userId, updateUserId, submit, refetch]
+  );
+
+  const hasStatesChanged = useMemo(() => {
+    if (userType !== "contractor") return false;
+    const initial = [...initialStatesAllowed].sort();
+    const current = [...(formData.states_allowed || [])].sort();
+    return JSON.stringify(initial) !== JSON.stringify(current);
+  }, [initialStatesAllowed, formData.states_allowed, userType]);
+
+  const hasAdminFormChanged = useMemo(() => {
+    if (userType !== "admin" || !initialAdminFormData) return false;
+
+    const currentAdminData = {
+      company_name: formData.company_name || "",
+      abn: formData.abn || "",
+      acn: formData.acn || "",
+      states_allowed: [...(formData.states_allowed || [])].sort(),
+      address: formData.address || "",
+      city: formData.city || "",
+      state: formData.state || "",
+      country: formData.country || "",
+      coordinates: formData.coordinates || "",
+    };
+
+    const initialDataNormalized = {
+      company_name: initialAdminFormData.company_name || "",
+      abn: initialAdminFormData.abn || "",
+      acn: initialAdminFormData.acn || "",
+      states_allowed: [...(initialAdminFormData.states_allowed || [])].sort(),
+      address: initialAdminFormData.address || "",
+      city: initialAdminFormData.city || "",
+      state: initialAdminFormData.state || "",
+      country: initialAdminFormData.country || "",
+      coordinates: initialAdminFormData.coordinates || "",
+    };
+
+    return JSON.stringify(currentAdminData) !== JSON.stringify(initialDataNormalized);
+  }, [initialAdminFormData, formData, userType]);
+
+  const hasPersonalFormChanged = useMemo(() => {
+    if (userType === "admin" || userType === "contractor" || !initialPersonalFormData) return false;
+
+    const currentPersonalData = {
+      name: formData.name || "",
+      email: formData.email || "",
+      phone: formData.phone || "",
+      address: formData.address || "",
+      city: formData.city || "",
+      state: formData.state || "",
+      country: formData.country || "",
+      coordinates: formData.coordinates || "",
+      gender: formData.gender || "",
+      origin_country: formData.origin_country || "",
+      staff_document_type: formData.staff_document_type || "",
+      security_license_no: formData.security_license_no || "",
+      date_of_birth: formData.date_of_birth || "",
+      company_name: formData.company_name || "",
+      registration_number: formData.registration_number || "",
+      abn: formData.abn || "",
+      acn: formData.acn || "",
+      is_control_room_license: formData.is_control_room_license ? 1 : 0,
+    };
+
+    const initialPersonalDataNormalized = {
+      name: initialPersonalFormData.name || "",
+      email: initialPersonalFormData.email || "",
+      phone: initialPersonalFormData.phone || "",
+      address: initialPersonalFormData.address || "",
+      city: initialPersonalFormData.city || "",
+      state: initialPersonalFormData.state || "",
+      country: initialPersonalFormData.country || "",
+      coordinates: initialPersonalFormData.coordinates || "",
+      gender: initialPersonalFormData.gender || "",
+      origin_country: initialPersonalFormData.origin_country || "",
+      staff_document_type: initialPersonalFormData.staff_document_type || "",
+      security_license_no: initialPersonalFormData.security_license_no || "",
+      date_of_birth: initialPersonalFormData.date_of_birth || "",
+      company_name: initialPersonalFormData.company_name || "",
+      registration_number: initialPersonalFormData.registration_number || "",
+      abn: initialPersonalFormData.abn || "",
+      acn: initialPersonalFormData.acn || "",
+      is_control_room_license: initialPersonalFormData.is_control_room_license ? 1 : 0,
+    };
+
+    return JSON.stringify(currentPersonalData) !== JSON.stringify(initialPersonalDataNormalized);
+  }, [initialPersonalFormData, formData, userType]);
+
+  const submitText = useMemo(() => {
+    if (userType === "admin") {
+      return hasAdminFormChanged ? "Next" : "Save Changes";
+    }
+    if (userType === "contractor") {
+      return hasStatesChanged ? "Next" : "Save Changes";
+    }
+    if (userType === "client" || userType === "customer") {
+      return "Save Changes";
+    }
+    return hasPersonalFormChanged ? "Next" : "Save Changes";
+  }, [userType, hasAdminFormChanged, hasStatesChanged, hasPersonalFormChanged]);
+
+  const handleSubmit = useCallback(
+    async (e) => {
+      if (e) e.preventDefault();
+      if (!userId) {
+        toast.error("Unable to update profile. Missing user id.");
+        return;
+      }
+
+      const missing = getMissingFields(formData);
+      if (missing.length > 0) {
+        setShowErrors(false);
+        setTimeout(() => {
+          setShowErrors(true);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }, 10);
+        toast.error(`Please complete all required fields: ${missing.join(", ")}`);
+        return;
+      }
+
+      if (!formData.address || !formData.city || !formData.state || !formData.country) {
+        setShowErrors(false);
+        setTimeout(() => {
+          setShowErrors(true);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }, 10);
+        toast.error("Please select a valid complete address from the Google Maps suggestions dropdown.");
+        return;
+      }
+
+      const payload = new FormData();
+      Object.keys(formData).forEach((key) => {
+        if (key === "profile_image") return;
+        if (userType === "admin" && (key === "name" || key === "phone" || key === "gender" || key === "date_of_birth" || key === "staff_document_type" || key === "security_license_no" || key === "is_control_room_license")) return;
+        if ((userType !== "staff" || !isStaffooStaff) && (key === "is_control_room_license" || key === "staff_document_type" || key === "date_of_birth" || key === "origin_country")) return;
+
+        if (key === "bank_details") {
+          payload.append("bank_details", JSON.stringify(formData.bank_details));
+        } else if (key === "states_allowed") {
+          payload.append("states_allowed", JSON.stringify(formData.states_allowed || []));
+        } else if (key === "is_control_room_license") {
+          payload.append("is_control_room_license", formData.is_control_room_license ? 1 : 0);
+        } else {
+          if (formData[key] !== undefined && formData[key] !== null) {
+            payload.append(key, formData[key]);
+          }
+        }
+      });
+
+      setEmailServerError("");
+      const res = await submit(`api/user-update/${updateUserId}`, payload, { method: "POST" });
+      if (!res || res.success === false) {
+        if (/already|taken|exist/i.test(res?.error) || res?.data?.errors?.email) {
+          setEmailServerError("Email already exists.");
+        }
+        return;
+      }
+      toast.success("Profile updated successfully!");
+      refetch();
+
+      if (userType === "admin") {
+        setInitialAdminFormData({
+          company_name: formData.company_name || "",
+          abn: formData.abn || "",
+          acn: formData.acn || "",
+          states_allowed: formData.states_allowed || [],
+          address: formData.address || "",
+          city: formData.city || "",
+          state: formData.state || "",
+          country: formData.country || "",
+          coordinates: formData.coordinates || "",
+        });
+        if (hasAdminFormChanged) {
+          setActiveTab("documents");
+        }
+      }
+
+      if (hasStatesChanged) {
+        setInitialStatesAllowed(formData.states_allowed || []);
+        setActiveTab("documents");
+      }
+
+      if (hasPersonalFormChanged) {
+        setInitialPersonalFormData({
+          name: formData.name || "",
+          email: formData.email || "",
+          phone: formData.phone || "",
+          address: formData.address || "",
+          city: formData.city || "",
+          state: formData.state || "",
+          country: formData.country || "",
+          coordinates: formData.coordinates || "",
+          gender: formData.gender || "",
+          origin_country: formData.origin_country || "",
+          staff_document_type: formData.staff_document_type || "",
+          security_license_no: formData.security_license_no || "",
+          is_control_room_license: formData.is_control_room_license ? 1 : 0,
+          date_of_birth: formData.date_of_birth || "",
+          company_name: formData.company_name || "",
+          registration_number: formData.registration_number || "",
+          abn: formData.abn || "",
+          acn: formData.acn || "",
+        });
+        if (userType !== "client" && userType !== "customer") {
+          setActiveTab("documents");
+        }
+      }
+    },
+    [formData, submit, userId, updateUserId, refetch, hasStatesChanged, hasAdminFormChanged, hasPersonalFormChanged, userType, getMissingFields, isStaffooStaff]
+  );
+
+  const handleClosePhoneModal = () => {
+    setShowPhoneModal(false);
+    setPhoneStep("input");
+    setNewPhoneInput("");
+    setPhoneOtp("");
+    setPhoneChangeError(null);
+    setPhoneChangeSuccess(false);
+  };
+
+  const handleRequestPhoneOtp = async (e) => {
+    e.preventDefault();
+    if (!userId) {
+      setPhoneChangeError("Unable to send OTP. Missing user id.");
+      return;
+    }
+    setPhoneChangeError(null);
+    const res = await phoneSubmit(`api/auth/resend-otp`, { phone: newPhoneInput, id: userId }, { method: "POST" });
+    if (!res) return;
+    if (res.success) {
+      setPhoneStep("otp");
+    } else {
+      setPhoneChangeError(res.errors || res.message || "Failed to send OTP");
+    }
+  };
+
+  const handleVerifyPhoneOtp = async (e) => {
+    e.preventDefault();
+    if (!userId) {
+      setPhoneChangeError("Unable to verify OTP. Missing user id.");
+      return;
+    }
+    setPhoneChangeError(null);
+    const res = await phoneSubmit(`api/auth/verify-phone`, { phone: newPhoneInput, otp: phoneOtp, id: userId }, { method: "POST" });
+    if (!res) return;
+    if (res.success) {
+      toast.success("Phone updated successfully!");
+      setFormData((prev) => ({ ...prev, phone: newPhoneInput }));
+      refetch();
+      setTimeout(() => handleClosePhoneModal(), 1500);
+    } else {
+      setPhoneChangeError(res.errors || res.message || "Invalid OTP. Please try again.");
+    }
+  };
+
+  const handleCardNumberChange = (e) => {
+    let value = e.target.value.replace(/\D/g, "");
+    let formattedValue = value.replace(/(.{4})/g, "$1 ").trim();
+    setCardForm((prev) => ({ ...prev, card_number: formattedValue.slice(0, 19) }));
+  };
+
+  const handleSaveNewCard = async (e) => {
+    e.preventDefault();
+    if (!userId) {
+      toast.error("Unable to add card. Missing user id.");
+      return;
+    }
+
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth() + 1;
+    const expMonth = parseInt(cardForm.expiry_month, 10);
+    const expYear = parseInt(cardForm.expiry_year, 10);
+    if (expYear < currentYear || expYear > currentYear + 20) {
+      toast.error("Please enter a valid future year (e.g., 2026).");
+      return;
+    }
+    if (expYear === currentYear && expMonth < currentMonth) {
+      toast.error("The expiry date must be in the future.");
+      return;
+    }
+
+    let updatedCards;
+    if (editingCardIndex !== null) {
+      updatedCards = formData.bank_details.map((card, i) =>
+        i === editingCardIndex ? cardForm : card
+      );
+    } else {
+      updatedCards = [...formData.bank_details, cardForm];
+    }
+
+    const payload = new FormData();
+    payload.append("bank_details", JSON.stringify(updatedCards));
+
+    const res = await submit(`api/user-update/${updateUserId}`, payload, { method: "POST" });
+    if (res === undefined) return;
+
+    setFormData((prev) => ({ ...prev, bank_details: updatedCards }));
+    setIsAddingCard(false);
+    setCardForm(INITIAL_CARD_STATE);
+    setEditingCardIndex(null);
+    refetch();
+    toast.success(editingCardIndex !== null ? "Card updated!" : "Card added successfully!");
+  };
+
+  const handleRemoveCardClick = (index) => {
+    setCardToDeleteIndex(index);
+    setShowCardDeleteModal(true);
+  };
+
+  const confirmRemoveCard = async () => {
+    if (cardToDeleteIndex === null) return;
+    if (!userId) {
+      toast.error("Unable to remove card. Missing user id.");
+      return;
+    }
+
+    const updatedCards = formData.bank_details.filter(
+      (_, i) => i !== cardToDeleteIndex
+    );
+
+    const payload = new FormData();
+    payload.append("bank_details", JSON.stringify(updatedCards));
+
+    const res = await submit(`api/user-update/${updateUserId}`, payload, { method: "POST" });
+    if (res === undefined) return;
+
+    setFormData((prev) => ({ ...prev, bank_details: updatedCards }));
+    refetch();
+    toast.success("Card removed successfully!");
+    setShowCardDeleteModal(false);
+    setCardToDeleteIndex(null);
+  };
+
+  const handleEditCard = (index) => {
+    const card = formData.bank_details[index];
+    setCardForm({ ...card });
+    setEditingCardIndex(index);
+    setIsAddingCard(true);
+  };
+
+  // ========== VERIFY DOCUMENT NUMBER (Security License + Visa) ==========
+  const handleVerifyDocumentNumber = async () => {
+    if (!userId) {
+      toast.error("Missing user id.");
+      return;
+    }
+    if (!docForm.document_no || docForm.document_no.trim() === "") {
+      toast.error("Please enter a document number first.");
+      return;
+    }
+    if (!docForm.document_name && !docForm.document_type) {
+      toast.error("Please select a document type.");
+      return;
+    }
+
+    const { isSecMasterLicense, isAnySecurityLicense } = getNormalizedDocInfo(
+      docForm.document_name,
+      docForm.document_type
+    );
+
+    // ---- Security License & Security Master License Verification ----
+    if (isAnySecurityLicense) {
+      const cat = (docForm.document_category || selectedDoc?.document_category || "").toLowerCase();
+      const rawState = (
+        formData?.state ||
+        profileData?.data?.state ||
+        userdata?.data?.state ||
+        userdata?.state ||
+        ""
+      ).trim();
+
+      if (checkIsDocSelfExpiry(cat, rawState)) {
+        return;
+      }
+      const STATE_NAME_MAP = {
+        contractor_document: "Victoria",
+        vic: "Victoria",
+        victoria: "Victoria",
+        nsw_document: "New South Wales",
+        nsw: "New South Wales",
+        "new south wales": "New South Wales",
+        qld_document: "Queensland",
+        qld: "Queensland",
+        queensland: "Queensland",
+        tas_document: "Tasmania",
+        tas: "Tasmania",
+        tasmania: "Tasmania",
+        wa_document: "Western Australia",
+        wa: "Western Australia",
+        "western australia": "Western Australia",
+        sa_document: "South Australia",
+        sa: "South Australia",
+        "south australia": "South Australia",
+        act_document: "Australian Capital Territory",
+        act: "Australian Capital Territory",
+        "australian capital territory": "Australian Capital Territory",
+        nt_document: "Northern Territory",
+        nt: "Northern Territory",
+        "northern territory": "Northern Territory",
+      };
+
+      const resolvedState = STATE_NAME_MAP[cat] || STATE_NAME_MAP[rawState.toLowerCase()] || rawState;
+
+      if (!resolvedState) {
+        toast.error("Please add your location first.");
+        return;
+      }
+
+      setVerifyingDoc(true);
+      try {
+        const resolvedUserType =
+          isSecMasterLicense
+            ? "contractor"
+            : userType === "contractor" || userType === "staff"
+              ? userType
+              : profileData?.data?.user_type === "contractor" || profileData?.data?.user_type === "staff"
+                ? profileData.data.user_type
+                : docForm.user_type || "staff";
+
+        const payload = {
+          document_type: isSecMasterLicense ? "Security Master License" : "Security License",
+          license_number: docForm.document_no,
+          state: resolvedState,
+          user_type: resolvedUserType,
+        };
+
+        const res = await submitSecurityLicense(
+          "api/documents-online-verification-staffoo",
+          payload,
+          { method: "POST" }
+        );
+
+        if (res?.success && res?.expiry) {
+          const expiryStr = isoToDisplay(res.expiry.replace(/\\\//g, "/"));
+          setDocForm((prev) => ({
+            ...prev,
+            document_expiry: expiryStr,
+            is_verified: true,
+            show_working_rights: false,
+          }));
+          toast.success(`${docForm.document_name} verified. Expiry date locked.`);
+        } else {
+          setDocForm((prev) => ({ ...prev, is_verified: false }));
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error("Verification request failed.");
+      } finally {
+        setVerifyingDoc(false);
+      }
+      return;
+    }
+
+    // ---- Visa Verification (uses uploaded passport) ----
+    if (docForm.document_name === "Visa") {
+      const allDocs = profileData?.data?.documents || [];
+      const passportDoc = allDocs.find(
+        (doc) => doc?.document_type?.toLowerCase() === "passport" && Boolean(doc.document_no)
+      );
+
+      if (!passportDoc) {
+        toast.error("First add your passport first");
+        return;
+      }
+
+      const user = userdata?.data || userdata;
+      const staff = user?.staff || {};
+      const fullName = (user?.name || "").trim();
+      let givenName = fullName;
+      let familyName = fullName;
+      const nameParts = fullName.split(/\s+/);
+      if (nameParts.length > 1) {
+        givenName = nameParts.slice(0, -1).join(" ");
+        familyName = nameParts[nameParts.length - 1];
+      }
+      const rawDob = staff?.date_of_birth || user?.date_of_birth || "";
+      if (!rawDob) {
+        toast.error("Date of birth is missing. Please update your personal information first.");
+        return;
+      }
+      const dobParts = rawDob.split("/");
+      if (dobParts.length !== 3) {
+        toast.error("Invalid date of birth format. Please re‑save your profile.");
+        return;
+      }
+      const dobISO = `${dobParts[2]}-${dobParts[1]}-${dobParts[0]}`;
+
+      const originCountry = user?.origin_country || user?.staff?.origin_country;
+      if (!originCountry) {
+        toast.error("Please save your country of birth in your profile before verifying your visa.");
+        return;
+      }
+      const countryCode = originCountry.toUpperCase().slice(0, 3);
+
+      const passportNumber = passportDoc.document_no.toUpperCase();
+
+      const payload = {
+        passport: passportNumber,
+        country: countryCode,
+        family_name: familyName,
+        given_name: givenName,
+        dob: dobISO,
+      };
+
+      setVerifyingDoc(true);
+      try {
+        const res = await submit("api/admin/visa-expiry-check", payload, { method: "POST" });
+        if (res?.success) {
+          if (res.show_document) {
+            setDocForm((prev) => ({
+              ...prev,
+              document_expiry: "",
+              is_verified: true,
+              show_working_rights: true,
+              working_rights_file_path: "",
+              working_rights_file_url: "",
+              work_entitlement: res.work_entitlement || "",
+            }));
+            toast.success("Visa verified. Please upload your Working Rights document.");
+          } else if (res.expiry) {
+            const displayExpiry = normalizeToDisplay(res.expiry);
+            setDocForm((prev) => ({
+              ...prev,
+              document_expiry: displayExpiry,
+              is_verified: true,
+              show_working_rights: false,
+            }));
+            toast.success("Visa verified. Expiry date locked.");
+          }
+        } else {
+          setDocForm((prev) => ({ ...prev, is_verified: false }));
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setVerifyingDoc(false);
+      }
+      return;
+    }
+  };
+
+  const handleDocNumberChange = (e) => {
+    const value = e.target.value.replace(/[^a-zA-Z0-9\s\-_/.]/g, "").toUpperCase();
+    setDocValidationError(null);
+    setDocForm((prev) => ({
+      ...prev,
+      document_no: value,
+      is_verified: false,
+    }));
+  };
+
+  const closeDocumentModal = () => {
+    setShowDocModal(false);
+    setSelectedDoc(null);
+    setDragActiveField(null);
+    setDocValidationError(null);
+    setDocValidating(false);
+    setDocValidationStatus(null);
+  };
+
+  const uploadDocFile = async (file, name) => {
+    if (!file) return;
+
+    const MAX_SIZE_MB = 10;
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      toast.error(`File too large. Max ${MAX_SIZE_MB}MB.`);
+      return;
+    }
+
+    // Apply frontend content validation to both Contractor and Staff documents
+    const currentDocType = selectedDoc?.document_type || docForm.document_type || "";
+    const userState = (formData?.state || profileData?.state || "").trim();
+    const currentDocCategory = selectedDoc?.document_category || docForm.document_category || userState;
+    const currentDocName = name === "working_rights_file"
+      ? "working_rights_file"
+      : (docForm.document_name || selectedDoc?.document_name || "");
+
+    let verifiedDocName = null;
+    let extractedText = "";
+
+    if (
+      isDocumentValidationApplicable(
+        userType,
+        currentDocType,
+        currentDocCategory,
+        currentDocName
+      )
+    ) {
+      setDocValidating(true);
+      setDocValidationStatus("Checking document contents...");
+      setDocValidationError(null);
+
+      try {
+        const valRes = await validateDocument(
+          file,
+          currentDocType,
+          currentDocCategory,
+          currentDocName,
+          (msg) => setDocValidationStatus(msg),
+          { state: userState, documentNumber: (docForm.document_no || "").trim() }
+        );
+
+        if (!valRes.isValid) {
+          setDocValidationError(valRes.error);
+          setDocValidating(false);
+          return;
+        }
+
+        verifiedDocName = valRes.docDisplayName || "Document";
+        extractedText = valRes.extractedText || "";
+      } catch (err) {
+        console.error("Document validation error:", err);
+        const errMsg = "This file could not be read. Please upload a clearer PDF or image.";
+        setDocValidationError(errMsg);
+        setDocValidating(false);
+        return;
+      } finally {
+        setDocValidating(false);
+      }
+    }
+
+    setDocValidationError(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("folder", "staff_documents");
+    const res = await uploadFile("api/upload-file", fd, { method: "POST" });
+    if (res?.success) {
+      if (verifiedDocName) {
+        toast.success(`${verifiedDocName} verified and uploaded successfully!`);
+      } else {
+        toast.success("File uploaded successfully!");
+      }
+      if (name === "working_rights_file") {
+        setDocForm((prev) => ({
+          ...prev,
+          working_rights_file_path: res.path || res.data?.path || "",
+          working_rights_file_url: res.url || res.data?.url || "",
+        }));
+      } else {
+        setDocForm((prev) => ({
+          ...prev,
+          file: file,
+          file_path: res.path || res.data?.path || "",
+          file_url: res.url || res.data?.url || "",
+          extracted_text: extractedText,
+        }));
+      }
+    }
+  };
+
+  const handleDragOver = (e, fieldName) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragActiveField !== fieldName) {
+      setDragActiveField(fieldName);
+    }
+  };
+
+  const handleDragLeave = (e, fieldName) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActiveField(null);
+  };
+
+  const handleDrop = async (e, fieldName) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActiveField(null);
+    if (e.dataTransfer?.files && e.dataTransfer.files[0]) {
+      await uploadDocFile(e.dataTransfer.files[0], fieldName);
+    }
+  };
+
+  const handleDocFormChange = async (e) => {
+    const { name, value, type, checked, files } = e.target;
+
+    if (name === "working_rights_file") {
+      const file = files?.[0];
+      if (file) await uploadDocFile(file, "working_rights_file");
+      return;
+    }
+
+    if (
+      name === "document_expiry" &&
+      (docForm.document_name === "Security License" ||
+        docForm.document_name === "Security Master License" ||
+        docForm.document_name === "Visa" ||
+        docForm.document_name === "White Card" ||
+        docForm.document_type === "white_card")
+    ) {
+      return;
+    }
+
+    if (type === "checkbox") {
+      setDocForm((prev) => ({ ...prev, [name]: checked }));
+    } else if (name === "document_name") {
+      setDocValidationError(null);
+      setDocValidating(false);
+      setDocValidationStatus(null);
+      const isDocWhiteCard = value === "White Card" || value === "white_card";
+      setDocForm((prev) => ({
+        ...prev,
+        document_name: value,
+        document_expiry: isDocWhiteCard ? "01/01/2036" : (prev.document_expiry || ""),
+        is_verified: isDocWhiteCard,
+        show_working_rights: false,
+      }));
+    } else if (type === "file") {
+      const file = files?.[0];
+      if (file) await uploadDocFile(file, name);
+    } else {
+      setDocForm((prev) => ({ ...prev, [name]: value }));
+    }
+  };
+
+  const handleDocSubmit = async (e) => {
+    e.preventDefault();
+    if (!userId) {
+      toast.error("Unable to save document. Missing user id.");
+      return;
+    }
+
+    const isWhiteCard =
+      (docForm.document_type || selectedDoc?.document_type) === "white_card" ||
+      (docForm.document_name || selectedDoc?.document_name) === "White Card";
+
+    const docNo = (docForm.document_no || "").trim();
+    if (!docNo) {
+      setDocValidationError("Please enter Document Number.");
+      toast.error("Please enter Document Number.");
+      return;
+    }
+
+    const docExpiry = isWhiteCard ? "01/01/2036" : (docForm.document_expiry || "").trim();
+    if (!docForm.show_working_rights && !isWhiteCard && !docExpiry) {
+      setDocValidationError("Please enter Expiry Date.");
+      toast.error("Please enter a valid expiry date.");
+      return;
+    }
+
+    if (!docForm.file_path && !selectedDoc?.file) {
+      setDocValidationError("Please upload the document file.");
+      toast.error("Please upload the document file.");
+      return;
+    }
+
+    // Verify document number and expiry date against uploaded document
+    let rawText = docForm.extracted_text || "";
+    if (!rawText && docForm.file) {
+      // A new file was just selected — OCR it directly.
+      setDocValidating(true);
+      setDocValidationStatus("Checking document contents...");
+      try {
+        const ext = await extractDocumentText(docForm.file);
+        if (ext?.success && ext.text) {
+          rawText = ext.text;
+          setDocForm((prev) => ({ ...prev, extracted_text: rawText }));
+        }
+      } catch (_) {}
+      finally {
+        setDocValidating(false);
+      }
+    } else if (!rawText && !docForm.file && (docForm.file_url || docForm.file_path || selectedDoc?.file)) {
+      // No new file was selected — this is an edit of an existing,
+      // already-uploaded document (e.g. just correcting the number/expiry).
+      // Fetch the existing file from the server so it can still be OCR'd and
+      // re-verified, instead of silently skipping the check or blocking the
+      // user from ever updating metadata without re-uploading.
+      setDocValidating(true);
+      setDocValidationStatus("Checking existing document contents...");
+      try {
+        const existingPath = docForm.file_url || docForm.file_path || selectedDoc?.file;
+        const fileUrl = /^https?:\/\//i.test(existingPath)
+          ? existingPath
+          : `${apiURL}staff_documents/${existingPath}`;
+        const resp = await fetch(fileUrl);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          const fileName = existingPath.split("/").pop() || "document";
+          const existingFile = new File([blob], fileName, { type: blob.type });
+          const ext = await extractDocumentText(existingFile, (msg) => setDocValidationStatus(msg));
+          if (ext?.success && ext.text) {
+            rawText = ext.text;
+            setDocForm((prev) => ({ ...prev, extracted_text: rawText }));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to re-check existing document:", err);
+      } finally {
+        setDocValidating(false);
+      }
+    }
+
+    if (rawText) {
+      const hasDocNumber = isDocumentNumberInText(rawText, docNo);
+      const hasExpiry =
+        isWhiteCard || isPendingRenewalExpiry(docExpiry)
+          ? true
+          : isExpiryDateInText(rawText, docExpiry);
+
+      if (!hasDocNumber && !hasExpiry) {
+        const errMsg = `Document Number "${docNo}" and Expiry Date "${docExpiry}" were not found in the uploaded document.`;
+        setDocValidationError(errMsg);
+        toast.error("Both Document Number and Expiry Date do not match the uploaded document.");
+        return;
+      }
+      if (!hasDocNumber) {
+        const errMsg = `Document Number "${docNo}" was not found in the uploaded document. Please check the document number.`;
+        setDocValidationError(errMsg);
+        toast.error(`Document Number "${docNo}" was not found in the document.`);
+        return;
+      }
+      if (!hasExpiry) {
+        const errMsg = `Expiry Date "${docExpiry}" was not found in the uploaded document. Please check the expiry date.`;
+        setDocValidationError(errMsg);
+        toast.error(`Expiry Date "${docExpiry}" was not found in the document.`);
+        return;
+      }
+    } else if (docForm.file || docForm.file_path || selectedDoc?.file) {
+      const errMsg = `Could not verify Document Number "${docNo}" in the uploaded document. Please upload a clear document image or PDF.`;
+      setDocValidationError(errMsg);
+      toast.error("Could not verify document number. Please upload a clearer file.");
+      return;
+    }
+
+    setDocValidationError(null);
+
+    const payload = {
+      user_id: userId,
+      no: docForm.no,
+      exp: docForm.exp,
+      document_no: docNo,
+      document_expiry: docForm.show_working_rights ? "" : docExpiry,
+      file: docForm.file_path || (selectedDoc?.file ?? ""),
+      document_name: docForm.document_name,
+      document_type: selectedDoc?.document_type || docForm.document_type || "",
+      document_category: selectedDoc?.document_category || docForm.document_category || "",
+    };
+
+    if (docForm.show_working_rights) {
+      payload.working_rights =
+        docForm.working_rights_file_path || (selectedDoc?.working_rights ?? "");
+    }
+
+    if (selectedDoc) payload.id = selectedDoc.id;
+
+    const url = selectedDoc ? "api/guard-update-documents" : "api/guard-add-documents";
+    const res = await submit(url, payload, { method: "POST" });
+    if (!res) return;
+    if (res.success) {
+      toast.success("Document saved successfully!");
+      closeDocumentModal();
+      refetch();
+    } else {
+      toast.error(res.message || "Failed to save document");
+    }
+  };
+
+  if (fetchLoading || !userdata || !profileData?.data) {
+    return <Loader />;
+  }
+
+  // ── Document Number field (varies by document type); reused inside a
+  // two-column desktop row alongside Expiry Date.
+  const allDocsForVisa = profileData?.data?.documents || [];
+  const passportDocForVisa = allDocsForVisa.find(
+    (doc) => doc.document_type?.toLowerCase() === "passport" && Boolean(doc.document_no)
+  );
+
+  const isDocSelfExpiryState = checkIsDocSelfExpiry(
+    docForm.document_category || selectedDoc?.document_category || "",
+    formData?.state ||
+    profileData?.data?.state ||
+    userdata?.data?.state ||
+    userdata?.state ||
+    ""
+  );
+
+  const { isAnySecurityLicense } = getNormalizedDocInfo(
+    docForm.document_name || selectedDoc?.document_name,
+    docForm.document_type || selectedDoc?.document_type
+  );
+
+  const isLicenseRequiringVerify = !isDocSelfExpiryState && isAnySecurityLicense;
+
+  const documentNumberField = docForm.document_name === "Visa" ? (
+    <>
+      {passportDocForVisa ? (
+        <>
+          <label className="form-label fw-semibold">Passport Number for Verification</label>
+          <div className="input-group mb-2">
+            <input type="text" className="form-control" value={passportDocForVisa.document_no} readOnly disabled />
+            <button type="button" className="btn btn-outline-primary" onClick={handleVerifyDocumentNumber} disabled={verifyingDoc}>
+              {verifyingDoc ? "Verifying..." : "Verify Visa"}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="alert alert-warning py-2 mb-2" style={{ textTransform: "none" }}>
+          <i className="fa fa-exclamation-triangle me-2" />
+          Please add your passport document first before verifying your visa.
+        </div>
+      )}
+      <label className="form-label fw-semibold">Visa Grant Number <span className="text-danger">*</span></label>
+      <input type="text" className="form-control" placeholder="e.g. ABC123456" value={docForm.document_no} onChange={handleDocNumberChange} required />
+    </>
+  ) : isLicenseRequiringVerify ? (
+    <>
+      <label className="form-label fw-semibold">Document Number <span className="text-danger">*</span></label>
+      <div className="input-group">
+        <input type="text" className="form-control" placeholder="e.g. ABC123456" value={docForm.document_no} onChange={handleDocNumberChange} required />
+        <button type="button" className="btn btn-outline-primary" onClick={handleVerifyDocumentNumber} disabled={verifyingDoc || !docForm.document_no}>
+          {verifyingDoc ? "Verifying..." : "Verify"}
+        </button>
+      </div>
+    </>
+  ) : (
+    <>
+      <label className="form-label fw-semibold">Document Number <span className="text-danger">*</span></label>
+      <input type="text" className="form-control" placeholder="e.g. ABC123456" value={docForm.document_no} onChange={handleDocNumberChange} required />
+    </>
+  );
+
+  const isPersonalComplete = missingFields.length === 0;
+  const isDocumentsComplete = docValidation.isValid;
+
+  const handleTabClick = (targetTab) => {
+    if (targetTab === "personal") {
+      setActiveTab(targetTab);
+      return;
+    }
+
+    if (userType === "admin" && hasAdminFormChanged) {
+      handleSubmit();
+      return;
+    }
+
+    if (!isPersonalComplete) {
+      setShowErrors(false);
+      setTimeout(() => {
+        setShowErrors(true);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }, 10);
+      setActiveTab("personal");
+      return;
+    }
+
+    if (targetTab !== "documents" && userType !== "customer") {
+      if (!docValidation.isValid) {
+        setShowDocErrors(false);
+        setTimeout(() => {
+          setShowDocErrors(true);
+          setTimeout(() => {
+            if (docErrorRef.current) {
+              docErrorRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+            } else {
+              window.scrollTo({ top: 200, behavior: "smooth" });
+            }
+          }, 50);
+        }, 10);
+        if (isStaffooStaff) {
+          toast.error(`Please upload documents to achieve at least 100 points before continuing. (Current: ${docValidation.totalPoints || 0}/100 points)`);
+        } else {
+          toast.error("Please upload all required documents before continuing.");
+        }
+        setActiveTab("documents");
+        return;
+      }
+    }
+
+    if (targetTab === "cards") {
+      setIsAddingCard(false);
+    }
+
+    setActiveTab(targetTab);
+  };
+
+  return (
+    <div className="dashboard-main">
+      <style>{`
+        :root {
+          --navy-950: #0a1930;
+          --navy-900: #0e2340;
+          --teal: #0A7C6E;
+          --teal-dark: #075e53;
+          --teal-tint: #f0fdf9;
+          --teal-border: #d1fae5;
+          --amber: #d97706;
+          --success: #16a34a;
+          --danger: #dc2626;
+          --ink: #0f172a;
+          --slate: #1e293b;
+          --muted: #64748b;
+          --line: #e2e8f0;
+          --line-soft: #f1f5f9;
+          --surface: #ffffff;
+          --canvas: #f8fafc;
+        }
+        @keyframes shakeRed {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-5px); }
+          50% { transform: translateX(5px); }
+          75% { transform: translateX(-5px); }
+        }
+        .shake-red {
+          animation: shakeRed 0.4s ease-in-out;
+          border-color: var(--danger) !important;
+        }
+        .tab-btn.shake-red {
+          background-color: var(--danger) !important;
+          border-color: var(--danger) !important;
+          color: white !important;
+        }
+        .profile-hero-inner {
+          display: flex;
+          align-items: flex-start;
+          gap: 1.5rem;
+        }
+        @media (max-width: 768px) {
+          .profile-hero { padding: 28px 20px 28px; }
+          .profile-hero-inner { flex-direction: column; align-items: center; gap: 18px; }
+        }
+        @media (max-width: 480px) {
+          .profile-hero { padding: 24px 16px 24px; border-radius: 16px; }
+        }
+        .profile-hero {
+          position: relative;
+          background: linear-gradient(135deg, var(--navy-950) 0%, var(--navy-900) 65%, #0f2f52 100%);
+          border-radius: 22px;
+          padding: 34px 36px 36px;
+          overflow: hidden;
+          isolation: isolate;
+          margin-bottom: 1.5rem;
+        }
+        .profile-hero::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background-image: radial-gradient(rgba(255,255,255,0.10) 1px, transparent 1px);
+          background-size: 22px 22px;
+          opacity: 0.35;
+          z-index: -1;
+        }
+        .profile-hero::after {
+          content: "";
+          position: absolute;
+          top: -60px;
+          right: -60px;
+          width: 260px;
+          height: 260px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(10,124,110,0.45) 0%, rgba(10,124,110,0) 70%);
+          z-index: -1;
+        }
+
+        .tabs-modern {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-bottom: 1.5rem;
+        }
+        .tabs-modern .tab-btn {
+          border-radius: 8px;
+          padding: 0.5rem 1.25rem;
+          font-size: 0.88rem;
+          font-weight: 600;
+          color: #475569;
+          background: transparent;
+          border: 1px solid transparent;
+          transition: all 0.2s ease-in-out;
+        }
+        .tabs-modern .tab-btn:hover { background: #f1f5f9; }
+        .tabs-modern .tab-btn.active {
+          background: var(--teal);
+          color: #ffffff;
+          box-shadow: 0 4px 6px -1px rgba(10, 124, 110, 0.2);
+        }
+        .tabs-modern .tab-btn.inactive {
+          border: 1px solid var(--teal);
+          color: var(--teal);
+          box-shadow: 0 4px 6px -1px rgba(10, 124, 110, 0.2);
+        }
+
+        .content-card {
+          background: var(--surface);
+          border-radius: 18px;
+          box-shadow: 0 4px 14px rgba(15,23,42,0.06);
+          border: 1px solid var(--line-soft);
+          overflow: hidden;
+          margin-bottom: 1.5rem;
+        }
+
+        .profile-hero-inner .avatar-upload-wrapper {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+      `}</style>
+
+
+      {/* Profile Hero Header */}
+      <div className="profile-hero">
+        <div className="profile-hero-inner" style={{ position: "relative", zIndex: 1 }}>
+          <SettingsHeaderContent
+            avatar={
+              <AvatarUpload
+                profilePhoto={profilePhoto}
+                name={formData.name}
+                onPhotoChange={handleAvatarUpload}
+                loading={uploadLoading}
+              />
+            }
+            company_name={formData.company_name}
+            isVerified={isverified}
+            userType={userType}
+            phone={formData.phone}
+            name={formData.name}
+            email={formData.email}
+            city={formData.address}
+            profileCompletion={userdata?.data?.profile_completion_percentage || userdata?.profile_completion_percentage || 0}
+            missingItems={missingFields}
+            isActive={userdata?.data?.is_active || userdata?.is_active}
+          />
+        </div>
+      </div>
+
+      {/* ⚠️ Inactive Profile Warning – amber style */}
+      {isStaffooStaff && !(userdata?.data?.is_active || userdata?.is_active) && (
+        <div
+          className="d-flex align-items-center gap-3 px-4 py-3 rounded-3 shadow-sm mb-4"
+          style={{
+            backgroundColor: "#fffbeb",
+            borderLeft: "5px solid #d97706",
+            color: "#92400e",
+          }}
+          role="alert"
+        >
+          <i
+            className="fa-solid fa-triangle-exclamation fs-2"
+            style={{ color: "#d97706" }}
+          ></i>
+          <div>
+            <strong className="d-block mb-1 fw-bold">Action Required</strong>
+            <span style={{ textTransform: "none", fontSize: "0.9rem" }}>
+              Complete your personal information, reach at least 100 document verification points,
+              and fill out the verification forms to become an active member.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {userType === "staff" && !isStaffooStaff && !(userdata?.data?.is_active || userdata?.is_active) && (
+        <div
+          className="d-flex align-items-center gap-3 px-4 py-3 rounded-3 shadow-sm mb-4"
+          style={{
+            backgroundColor: "#fffbeb",
+            borderLeft: "5px solid #d97706",
+            color: "#92400e",
+          }}
+          role="alert"
+        >
+          <i
+            className="fa-solid fa-triangle-exclamation fs-2"
+            style={{ color: "#d97706" }}
+          ></i>
+          <div>
+            <strong className="d-block mb-1 fw-bold">Action Required</strong>
+            <span style={{ textTransform: "none", fontSize: "0.9rem" }}>
+              Complete your personal information and upload all required documents to become an active member.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ⚠️ Non-operating State Notice for Staffoo Staff */}
+      {isStaffooStaff && isStaffooOutOfState && (
+        <div
+          className="d-flex align-items-center gap-3 px-4 py-3 rounded-3 shadow-sm mb-4"
+          style={{
+            backgroundColor: "#fff7ed",
+            border: "1px solid #fed7aa",
+            borderLeft: "6px solid #ea580c",
+            color: "#9a3412",
+          }}
+          role="alert"
+        >
+          <div
+            className="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+            style={{ width: "42px", height: "42px", backgroundColor: "#ffedd5", color: "#ea580c" }}
+          >
+            <i className="fa-solid fa-map-location-dot fs-5"></i>
+          </div>
+          <div>
+            <div className="d-flex align-items-center gap-2 mb-1">
+              <strong className="d-block fw-bold" style={{ fontSize: "0.98rem", color: "#9a3412" }}>
+                Service Area Notice
+              </strong>
+              <span
+                className="badge rounded-pill"
+                style={{ backgroundColor: "#ffedd5", color: "#c2410c", fontSize: "0.75rem", border: "1px solid #fdba74" }}
+              >
+                {userStateDisplay}
+              </span>
+            </div>
+            <span style={{ textTransform: "none", fontSize: "0.9rem", color: "#7c2d12", lineHeight: "1.45" }}>
+              We are currently not operating in your state (<strong>{userStateDisplay}</strong>). We are currently operating in <strong>Victoria</strong> and <strong>New South Wales</strong>. Stay with us until we start operating in your area!
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="tabs-modern">
+        <button
+          className={`tab-btn ${activeTab === "personal" ? "active" : "inactive"} ${showErrors && !isPersonalComplete ? "shake-red" : ""}`}
+          onClick={() => setActiveTab("personal")}
+        >
+          {userType === "admin" ? "Business Information" : "Personal Information"}
+        </button>
+        {userType === "customer" && (
+          <button
+            className={`tab-btn ${activeTab === "cards" ? "active" : "inactive"}`}
+            onClick={() => handleTabClick("cards")}
+          >
+            Payment Details
+          </button>
+        )}
+        {userType !== "customer" && (
+          <button
+            className={`tab-btn ${activeTab === "documents" ? "active" : "inactive"} ${showDocErrors && !isDocumentsComplete ? "shake-red" : ""}`}
+            onClick={() => handleTabClick("documents")}
+          >
+            Documents
+          </button>
+        )}
+        {userType === "contractor" && (
+          <button
+            className={`tab-btn ${activeTab === "rates" ? "active" : "inactive"}`}
+            onClick={() => handleTabClick("rates")}
+          >
+            My Rates
+          </button>
+        )}
+        {isStaffooStaff && (
+          <button
+            className={`tab-btn ${activeTab === "onboarding" ? "active" : "inactive"}`}
+            onClick={() => handleTabClick("onboarding")}
+          >
+            Verification Forms
+          </button>
+        )}
+        {(isStaffooStaff || userType === "contractor") && (
+          <button
+            className={`tab-btn ${activeTab === "induction" ? "active" : "inactive"}`}
+            onClick={() => handleTabClick("induction")}
+          >
+            Induction
+          </button>
+        )}
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "personal" && (
+        <ProfileForm
+          formData={formData}
+          submitText={submitText}
+          showPhoneOtp={true}
+          showErrors={showErrors}
+          isStaffooStaff={isStaffooStaff}
+          emailServerError={emailServerError}
+          onChange={(e) => {
+            const { id, name, value } = e.target;
+            const fieldId = id || name;
+
+            if (fieldId === "email" && emailServerError) {
+              setEmailServerError("");
+            }
+
+            if (fieldId === "address") {
+              if (isSelectingAddress.current) return;
+              setFormData((prev) => ({
+                ...prev,
+                address: value,
+                city: "",
+                state: "",
+                country: "",
+                coordinates: "",
+              }));
+            } else {
+              setFormData((prev) => ({ ...prev, [fieldId]: value }));
+            }
+          }}
+          onSubmit={handleSubmit}
+          loading={submitLoading}
+          userType={userType}
+          isPhoneVerified={isPhoneVerified}
+          onChangePhone={() => {
+            setNewPhoneInput(formData.phone || "");
+            setPhoneStep("input");
+            setPhoneChangeError(null);
+            setPhoneChangeSuccess(false);
+            setShowPhoneModal(true);
+          }}
+          isEdit={true}
+          hideFields={
+            !isStaffooStaff
+              ? [
+                "is_control_room_license",
+                "staff_document_type",
+                "date_of_birth",
+                "origin_country",
+              ]
+              : []
+          }
+        />
+      )}
+
+      {activeTab === "onboarding" && isStaffooStaff && (
+        <StaffOnboardingForms submit={submit} userId={userId} />
+      )}
+
+      {activeTab === "induction" && (isStaffooStaff || userType === "contractor") && (
+        <InductionTab userId={userId} />
+      )}
+
+      {activeTab === "rates" && userType === "contractor" && (
+        <ContractorRatesView
+          selectedStates={formData.states_allowed || []}
+          onRatesUpdated={() => refetch()}
+          onSuccess={() => refetch()}
+        />
+      )}
+
+      {activeTab === "cards" && userType === "customer" && (
+        <div className="content-card p-4">
+          {!isAddingCard ? (
+            <>
+              <div className="d-flex justify-content-between align-items-center mb-4">
+                <h4 className="fw-bold mb-0">Your Saved Cards</h4>
+                <button
+                  className="btn btn-primary-custom shadow-sm"
+                  style={{ background: "#0A7C6E", borderColor: "#0A7C6E" }}
+                  onClick={() => setIsAddingCard(true)}
+                >
+                  + Add New Card
+                </button>
+              </div>
+
+              {formData.bank_details.length === 0 ? (
+                <div className="text-center p-5 border rounded-3 bg-light text-muted">
+                  <i className="fa-regular fa-credit-card fs-1 mb-3 opacity-50"></i>
+                  <h5>No cards saved yet</h5>
+                  <p className="small" style={{ textTransform: "none" }}>Add a payment method to easily checkout.</p>
+                </div>
+              ) : (
+                <div className="row">
+                  {formData.bank_details.map((card, index) => (
+                    <div key={index} className="col-md-6 col-lg-4 mb-4">
+                      <div className="position-relative text-white p-4 rounded-4 shadow-sm h-100" style={{ background: "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)" }}>
+                        <button className="btn btn-sm btn-danger position-absolute" style={{ top: "5px", right: "12px" }} onClick={() => handleRemoveCardClick(index)} disabled={submitLoading} title="Remove Card">
+                          <i className="fa-solid fa-trash-can"></i>
+                        </button>
+                        <button
+                          className="btn btn-sm btn-light position-absolute"
+                          style={{ top: "5px", right: "50px" }}
+                          onClick={() => handleEditCard(index)}
+                          title="Edit Card"
+                        >
+                          <i className="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        <div className="d-flex justify-content-between align-items-center mb-4 mt-2">
+                          <i className="fa-regular fa-credit-card fs-4 opacity-50"></i>
+                          <span className="fst-italic" style={{ opacity: 0.8, fontSize: "1.2rem", marginRight: "30px" }}>VISA</span>
+                        </div>
+                        <h5 className="mb-4" style={{ letterSpacing: "2px", fontFamily: "monospace" }}>{card.card_number || "**** **** **** ****"}</h5>
+                        <div className="d-flex justify-content-between" style={{ fontSize: "0.85rem", opacity: 0.9 }}>
+                          <div>
+                            <div style={{ fontSize: "0.6rem", opacity: 0.7 }}>Card Holder</div>
+                            <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "150px" }}>{card.card_holder_name || "YOUR NAME"}</div>
+                          </div>
+                          <div className="text-end">
+                            <div style={{ fontSize: "0.6rem", opacity: 0.7 }}>Expires</div>
+                            <div>{card.expiry_month || "MM"}/{card.expiry_year || "YY"}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="row align-items-center">
+              <div className="col-md-5 mb-4 mb-md-0 d-flex justify-content-center">
+                <div className="position-relative text-white p-4 rounded-4 shadow-lg" style={{ background: "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)", width: "100%", maxWidth: "360px", height: "220px" }}>
+                  <div className="d-flex justify-content-between align-items-center mb-4">
+                    <i className="fa-regular fa-credit-card fs-4 opacity-50"></i>
+                    <span className="fst-italic" style={{ opacity: 0.8, fontSize: "1.2rem" }}>VISA</span>
+                  </div>
+                  <h4 className="mb-4" style={{ letterSpacing: "2px", fontFamily: "monospace" }}>{cardForm.card_number || "**** **** **** ****"}</h4>
+                  <div className="d-flex justify-content-between" style={{ fontSize: "0.85rem", opacity: 0.9 }}>
+                    <div>
+                      <div style={{ fontSize: "0.6rem", opacity: 0.7 }}>Card Holder</div>
+                      <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "180px" }}>{cardForm.card_holder_name || "YOUR NAME"}</div>
+                    </div>
+                    <div className="text-end">
+                      <div style={{ fontSize: "0.6rem", opacity: 0.7 }}>Expires</div>
+                      <div>{cardForm.expiry_month || "MM"}/{cardForm.expiry_year || "YY"}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="col-md-7">
+                <div className="d-flex align-items-center mb-3">
+                  <i className="fa-solid fa-shield-halved text-success fs-5 me-2"></i>
+                  <h4 className="mb-0">Secure Payment Information</h4>
+                </div>
+                <p className="text-muted small mb-4" style={{ textTransform: "none" }}>Your payment details are encrypted and securely stored.</p>
+
+                <form onSubmit={handleSaveNewCard}>
+                  <div className="mb-3">
+                    <label className="form-label text-muted small fw-bold">Name on Card <span className="text-danger">*</span></label>
+                    <input type="text" className="form-control" placeholder="e.g. John Doe" value={cardForm.card_holder_name} onChange={(e) => { const val = e.target.value.replace(/[^a-zA-Z\s]/g, "").slice(0, 30); setCardForm((p) => ({ ...p, card_holder_name: val.toUpperCase() })); }} required />
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label text-muted small fw-bold">Card Number <span className="text-danger">*</span></label>
+                    <div className="input-group">
+                      <input type="text" className="form-control" placeholder="0000 0000 0000 0000" value={cardForm.card_number} onChange={handleCardNumberChange} required />
+                      <span className="input-group-text bg-white">
+                        <i className="fa-regular fa-credit-card"></i>
+                      </span>
+                    </div>
+                  </div>
+                  <div className="row mb-4">
+                    <div className="col-4">
+                      <label className="form-label text-muted small fw-bold">Expiry Month <span className="text-danger">*</span></label>
+                      <input type="text" className="form-control text-center" placeholder="MM" maxLength="2" value={cardForm.expiry_month} onChange={(e) => { let val = e.target.value.replace(/\D/g, "").slice(0, 2); if (val.length === 2 && parseInt(val, 10) > 12) val = "12"; else if (val.length === 2 && parseInt(val, 10) === 0) val = "01"; setCardForm((p) => ({ ...p, expiry_month: val })); }} required />
+                    </div>
+                    <div className="col-4">
+                      <label className="form-label text-muted small fw-bold">Expiry Year <span className="text-danger">*</span></label>
+                      <input type="text" className="form-control text-center" placeholder="YYYY" maxLength="4" value={cardForm.expiry_year} onChange={(e) => { const val = e.target.value.replace(/\D/g, "").slice(0, 4); setCardForm((p) => ({ ...p, expiry_year: val })); }} required />
+                    </div>
+                    <div className="col-4">
+                      <label className="form-label text-muted small fw-bold">CVV <span className="text-danger">*</span></label>
+                      <input type="password" className="form-control text-center" placeholder="***" maxLength="3" value={cardForm.cvv} onChange={(e) => { const val = e.target.value.replace(/\D/g, ""); setCardForm((p) => ({ ...p, cvv: val })); }} required />
+                    </div>
+                  </div>
+                  <div className="d-flex gap-2">
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary w-50 py-2 fw-bold"
+                      onClick={() => {
+                        setIsAddingCard(false);
+                        setEditingCardIndex(null);
+                        setCardForm(INITIAL_CARD_STATE);
+                      }}
+                      disabled={submitLoading}
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" className="btn btn-primary-custom w-50 py-2 fw-bold shadow-sm" style={{ background: "#0A7C6E", borderColor: "#0A7C6E" }} disabled={submitLoading}>{submitLoading ? "Saving..." : "Save Card"}</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "documents" && userType !== "customer" && (
+        <div className="content-card p-4">
+          {/* 100-Point Identification Check Banner for Staff-O Staff ONLY */}
+          {isStaffooStaff && (
+            <div
+              className="p-3 p-md-4 rounded-3 mb-4 shadow-sm"
+              style={{
+                background: (docValidation.totalPoints || 0) >= 100 ? "#f0fdf4" : "#f8fafc",
+                border: `1px solid ${(docValidation.totalPoints || 0) >= 100 ? "#86efac" : "#e2e8f0"}`,
+                borderLeft: `5px solid ${(docValidation.totalPoints || 0) >= 100 ? "#16a34a" : "#0A7C6E"}`,
+              }}
+            >
+              <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-2">
+                <div>
+                  <h6 className="fw-bold mb-1" style={{ color: "#0f172a" }}>
+                    <i className="fa-solid fa-id-card me-2" style={{ color: "#0A7C6E" }}></i>
+                    100-Point Identification Check
+                  </h6>
+                  <p className="text-muted small mb-0" style={{ textTransform: "none" }}>
+                    Upload eligible identity documents to reach a minimum of <strong>100 points</strong> to proceed to verification forms.
+                  </p>
+                </div>
+                <div className="text-end flex-shrink-0">
+                  <span
+                    className="badge fs-6 px-3 py-2 rounded-pill fw-bold"
+                    style={{
+                      backgroundColor: (docValidation.totalPoints || 0) >= 100 ? "#16a34a" : "#0A7C6E",
+                      color: "#fff",
+                    }}
+                  >
+                    {(docValidation.totalPoints || 0) >= 100
+                      ? "100 points completed"
+                      : `${docValidation.totalPoints || 0} / 100 Points`}
+                  </span>
+                </div>
+              </div>
+              <div className="progress mt-2" style={{ height: "10px", backgroundColor: "#e2e8f0", borderRadius: "10px" }}>
+                <div
+                  className="progress-bar progress-bar-striped"
+                  role="progressbar"
+                  style={{
+                    width: `${Math.min(100, (docValidation.totalPoints || 0))}%`,
+                    backgroundColor: (docValidation.totalPoints || 0) >= 100 ? "#16a34a" : "#0A7C6E",
+                    transition: "width 0.4s ease",
+                  }}
+                  aria-valuenow={docValidation.totalPoints || 0}
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                ></div>
+              </div>
+              {(docValidation.totalPoints || 0) >= 100 ? (
+                <div className="d-flex align-items-center gap-2 mt-2 text-success small fw-semibold">
+                  <i className="fa-solid fa-circle-check"></i>
+                  <span>Requirement met! You have reached 100+ points and can proceed.</span>
+                </div>
+              ) : (
+                <div className="d-flex align-items-center gap-2 mt-2 text-muted small">
+                  <i className="fa-solid fa-circle-info text-primary"></i>
+                  <span>Need <strong>{Math.max(0, 100 - (docValidation.totalPoints || 0))} more points</strong> to unlock next step.</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {showDocErrors && !docValidation.isValid && (
+            <div
+              ref={docErrorRef}
+              className="p-4 rounded-3 mb-4 shadow-sm shake-red"
+              style={{
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderLeft: "5px solid #dc2626",
+                color: "#991b1b",
+              }}
+              role="alert"
+            >
+              <div className="d-flex align-items-start gap-3">
+                <i
+                  className="fa-solid fa-circle-exclamation fs-3 mt-1 flex-shrink-0"
+                  style={{ color: "#dc2626" }}
+                ></i>
+                <div className="w-100">
+                  <h5 className="fw-bold mb-2" style={{ color: "#991b1b", fontSize: "1rem" }}>
+                    {isStaffooStaff
+                      ? `Minimum 100 document verification points required (Current: ${docValidation.totalPoints || 0}/100 points).`
+                      : "Please upload all required documents before continuing."}
+                  </h5>
+                  {isStaffooStaff && (docValidation.totalPoints || 0) < 100 && (
+                    <p className="mb-2" style={{ fontSize: "0.88rem", color: "#7f1d1d" }}>
+                      You need at least <strong>{Math.max(0, 100 - (docValidation.totalPoints || 0))} more points</strong>. Please upload additional eligible identity documents (e.g. Passport 70 pts, Driver License Front 70 pts, Citizenship 70 pts, Security License 40 pts, Medicare 25 pts, Birth Certificate 25 pts).
+                    </p>
+                  )}
+                  {!isStaffooStaff && docValidation.missingDocs.length > 0 && (
+                    <div className="mb-2">
+                      <strong className="d-block mb-1" style={{ fontSize: "0.88rem", color: "#7f1d1d" }}>
+                        Missing documents:
+                      </strong>
+                      <ul className="mb-0 ps-4" style={{ fontSize: "0.85rem", color: "#7f1d1d", listStyleType: "disc" }}>
+                        {docValidation.missingDocs.map((item, idx) => (
+                          <li key={idx} className="mb-1" style={{ listStyleType: "disc" }}>
+                            <strong>{item.name}</strong>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {docValidation.invalidDocs.length > 0 && (
+                    <div>
+                      <strong className="d-block mb-1" style={{ fontSize: "0.88rem", color: "#7f1d1d" }}>
+                        Documents requiring attention:
+                      </strong>
+                      <ul className="mb-0 ps-4" style={{ fontSize: "0.85rem", color: "#7f1d1d", listStyleType: "disc" }}>
+                        {docValidation.invalidDocs.map((item, idx) => (
+                          <li key={idx} className="mb-1" style={{ listStyleType: "disc" }}>
+                            <strong>{item.name}</strong> — {item.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DocumentTable
+            documents={filteredDocuments}
+            userType={userType}
+            isStaffooStaff={isStaffooStaff}
+            showDocErrors={showDocErrors}
+            onAddFile={(doc) => {
+              setSelectedDoc(doc);
+              setDragActiveField(null);
+              setDocValidationError(null);
+              setDocValidating(false);
+              setDocValidationStatus(null);
+              const displayName = doc.document_name || doc.document_type || "";
+              const isDocWhiteCard =
+                (doc.document_type || "").toLowerCase() === "white_card" ||
+                (displayName || "").toLowerCase() === "white card";
+              const displayExpiry = isDocWhiteCard
+                ? "01/01/2036"
+                : (isoToDisplay(doc.document_expiry) || "");
+
+              if (!doc.document_no && !doc.document_expiry && !doc.file) {
+                setDocForm({
+                  notes: "",
+                  no: false,
+                  exp: false,
+                  document_no: "",
+                  document_expiry: isDocWhiteCard ? "01/01/2036" : "",
+                  file: null,
+                  file_path: "",
+                  file_url: "",
+                  document_name: displayName,
+                  document_type: doc.document_type || "",   // ← keep original slug
+                  document_category: doc.document_category || "",
+                  is_verified: isDocWhiteCard || !!doc.document_expiry,
+                  working_rights_file_path: doc.working_rights || "",
+                  working_rights_file_url: doc.working_rights || "",
+                  show_working_rights: !!doc.working_rights,
+                  extracted_text: "",
+                });
+              } else {
+                setDocForm({
+                  notes: "",
+                  no: false,
+                  exp: false,
+                  document_no: doc.document_no || "",
+                  document_expiry: displayExpiry,
+                  file: null,
+                  file_path: doc.file || "",
+                  file_url: doc.file || "",
+                  document_name: displayName,
+                  document_type: doc.document_type || "",   // ← keep original slug
+                  document_category: doc.document_category || "",
+                  is_verified: isDocWhiteCard || !!doc.document_expiry,
+                  working_rights_file_path: doc.working_rights || "",
+                  working_rights_file_url: doc.working_rights || "",
+                  show_working_rights: !!doc.working_rights,
+                  extracted_text: "",
+                });
+              }
+              setShowDocModal(true);
+            }}
+            onAddDocument={() => {
+              setSelectedDoc(null);
+              setDragActiveField(null);
+              setDocValidationError(null);
+              setDocValidating(false);
+              setDocValidationStatus(null);
+              setDocForm({
+                notes: "",
+                no: false,
+                exp: false,
+                document_no: "",
+                document_expiry: "",
+                file: null,
+                file_path: "",
+                file_url: "",
+                document_name: "",
+                document_type: "",
+                document_category: "",
+                is_verified: false,
+                working_rights_file_path: "",
+                working_rights_file_url: "",
+                show_working_rights: false,
+                extracted_text: "",
+              });
+              setShowDocModal(true);
+            }}
+          />
+          {userType === "contractor" && (
+            <div className="mt-4 text-end">
+              <button
+                className="btn px-5 py-2.5 rounded-pill fw-bold"
+                style={{ background: "#0A7C6E", borderColor: "#0A7C6E", color: "white" }}
+                onClick={() => handleTabClick("rates")}
+              >
+                <i className="fa-solid fa-arrow-right ms-2"></i> Next
+              </button>
+            </div>
+          )}
+          {userType === "staff" && (userdata?.data?.user_id === 1 || userdata?.user_id === 1) && (
+            <div className="mt-4 text-end">
+              <button
+                className="btn px-5 py-2.5 rounded-pill fw-bold"
+                style={{ background: "#0A7C6E", borderColor: "#0A7C6E", color: "white" }}
+                onClick={() => handleTabClick("onboarding")}
+              >
+                <i className="fa-solid fa-arrow-right ms-2"></i> Next
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Card Delete Confirm Modal */}
+      <PremiumModal open={showCardDeleteModal} onClose={() => { setShowCardDeleteModal(false); setCardToDeleteIndex(null); }} title="Remove Card">
+        <div className="p-4 text-center">
+          <div className="mb-3 text-danger">
+            <i className="fa-solid fa-circle-xmark fa-3x"></i>
+          </div>
+          <h4 className="mb-3 fw-bold">Remove Card?</h4>
+          <p className="text-muted mb-4">
+            Are you sure you want to remove this card ending in{" "}
+            <strong>
+              {cardToDeleteIndex !== null && formData.bank_details[cardToDeleteIndex]
+                ? formData.bank_details[cardToDeleteIndex].card_number.slice(-4)
+                : ""}
+            </strong>? This action cannot be undone.
+          </p>
+          <div className="d-flex gap-3 justify-content-center">
+            <button type="button" className="btn btn-outline-secondary px-4 py-2 fw-bold" onClick={() => { setShowCardDeleteModal(false); setCardToDeleteIndex(null); }} disabled={submitLoading}>Cancel</button>
+            <button type="button" className="btn btn-danger px-4 py-2 fw-bold shadow-sm" onClick={confirmRemoveCard} disabled={submitLoading}>{submitLoading ? "Removing..." : "Yes, Remove It"}</button>
+          </div>
+        </div>
+      </PremiumModal>
+
+      {/* Phone Change / Verify Modal */}
+      <PremiumModal open={showPhoneModal} onClose={handleClosePhoneModal} title={isPhoneVerified ? "Change Phone Number" : "Verify Phone Number"}>
+        <div className="p-3">
+          <p className="text-muted small mb-4" style={{ textTransform: "none" }}>
+            {phoneStep === "input"
+              ? isPhoneVerified
+                ? "Enter your new phone number to receive an OTP."
+                : "You can modify the number below before sending the verification OTP."
+              : `Enter the OTP sent to ${newPhoneInput}`}
+          </p>
+          {phoneChangeSuccess && <div className="alert alert-success py-2">Phone number updated successfully!</div>}
+          {phoneChangeError && <div className="alert alert-danger py-2">{phoneChangeError}</div>}
+          {phoneStep === "input" ? (
+            <form onSubmit={handleRequestPhoneOtp}>
+              <div className="mb-3">
+                <label className="form-label fw-semibold">Phone Number <span className="text-danger">*</span></label>
+                <input type="tel" className="form-control" placeholder="+61 400 000 000" value={newPhoneInput} onChange={(e) => setNewPhoneInput(e.target.value)} required autoFocus maxLength="15" pattern="^(?:\+?61|0)[2-478](?:[\s\-]*\d){8}$" title="Please enter a valid Australian phone number (e.g., 0400 000 000 or +61 400 000 000)" />
+              </div>
+              <div className="d-flex gap-2">
+                <button type="button" className="btn btn-outline-secondary w-50" onClick={handleClosePhoneModal} disabled={phoneSubmitLoading}>Cancel</button>
+                <button type="submit" className="btn btn-primary-custom w-50" style={{ background: "#0A7C6E", borderColor: "#0A7C6E" }} disabled={phoneSubmitLoading}>{phoneSubmitLoading ? "Sending OTP..." : "Send OTP"}</button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyPhoneOtp}>
+              <div className="mb-3">
+                <label className="form-label fw-semibold">Enter OTP <span className="text-danger">*</span></label>
+                <input type="text" className="form-control text-center fw-bold" placeholder="Enter OTP" value={phoneOtp} onChange={(e) => setPhoneOtp(e.target.value.replace(/\D/g, ""))} maxLength={8} required autoFocus />
+                <div className="mt-2 text-end">
+                  <button type="button" className="btn btn-link btn-sm p-0 text-muted" onClick={() => { setPhoneStep("input"); setPhoneOtp(""); setPhoneChangeError(null); }} disabled={phoneSubmitLoading}>Change number / Resend OTP</button>
+                </div>
+              </div>
+              <div className="d-flex gap-2">
+                <button type="button" className="btn btn-outline-secondary w-50" onClick={handleClosePhoneModal} disabled={phoneSubmitLoading}>Cancel</button>
+                <button type="submit" className="btn btn-primary-custom w-50" style={{ background: "#0A7C6E", borderColor: "#0A7C6E" }} disabled={phoneSubmitLoading || phoneChangeSuccess}>{phoneSubmitLoading ? "Verifying..." : "Verify and Update"}</button>
+              </div>
+            </form>
+          )}
+        </div>
+      </PremiumModal>
+
+      {/* Document Modal */}
+      <PremiumModal open={showDocModal} onClose={closeDocumentModal} wide title={selectedDoc ? "Update Document" : "Add New Document"}>
+        <form onSubmit={handleDocSubmit} className="d-flex flex-column gap-1">
+          {/* Document Type */}
+          <div className="mb-3">
+            <label className="form-label fw-semibold">Document Type</label>
+            <select
+              className="form-control"
+              name="document_name"
+              value={docForm.document_name}
+              onChange={handleDocFormChange}
+              required
+              disabled={!!selectedDoc}
+            >
+              <option value="">Select Type</option>
+              {DOC_TYPES.map((doc) => (
+                <option key={doc.value} value={doc.value}>{capitalizeWords(doc.label)}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Working Rights block */}
+          {docForm.show_working_rights ? (
+            <>
+              <div className="mb-3">{documentNumberField}</div>
+
+              {/* Work Entitlement Badge */}
+              {docForm.work_entitlement && (
+                <div className="mb-3">
+                  <span
+                    className="d-inline-flex align-items-center rounded-pill px-3 py-2"
+                    style={{
+                      background: "#DCFCE7",
+                      border: "1px solid #86EFAC",
+                      color: "#166534",
+                      fontSize: "0.8rem",
+                      fontWeight: 600,
+                    }}
+                  >
+                    <i
+                      className="fa-solid fa-briefcase me-2"
+                      style={{ fontSize: "0.75rem" }}
+                    />
+                    <span style={{ opacity: 0.8, marginRight: 6 }}>
+                      Work Entitlement:
+                    </span>
+                    <strong className="text-uppercase">
+                      {docForm.work_entitlement}
+                    </strong>
+                  </span>
+                </div>
+              )}
+
+              {/* Attachments side-by-side on desktop */}
+              <div className="row g-3">
+                <div className="col-12 col-md-6">
+                  <label className="form-label fw-semibold">Upload Working Rights Document <span className="text-danger">*</span></label>
+                  <label
+                    className="position-relative p-3 text-center w-100 d-flex flex-column align-items-center justify-content-center"
+                    style={{
+                      minHeight: "200px",
+                      cursor: "pointer",
+                      border: dragActiveField === "working_rights_file" ? "2px dashed #0A7C6E" : "2px dashed #cbd5e1",
+                      backgroundColor: dragActiveField === "working_rights_file" ? "#f0fdf4" : "#f8fafc",
+                      borderRadius: "12px",
+                      transition: "all 0.2s ease-in-out",
+                      overflow: "hidden"
+                    }}
+                    onDragOver={(e) => handleDragOver(e, "working_rights_file")}
+                    onDragLeave={(e) => handleDragLeave(e, "working_rights_file")}
+                    onDrop={(e) => handleDrop(e, "working_rights_file")}
+                  >
+                    {docForm.working_rights_file_url ? (
+                      <div className="d-flex flex-column align-items-center w-100 p-2">
+                        {docForm.working_rights_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                          <img
+                            src={docForm.working_rights_file_url.startsWith("http") ? docForm.working_rights_file_url : `${apiURL}staff_documents/${docForm.working_rights_file_url}`}
+                            alt="Working Rights"
+                            style={{ width: "100%", maxHeight: "140px", objectFit: "contain", borderRadius: "8px", opacity: uploadLoading ? 0.3 : 1 }}
+                          />
+                        ) : (
+                          <div className="text-center py-2">
+                            <i className="fa-solid fa-file-pdf fa-3x text-danger mb-2"></i>
+                            <div>
+                              <a style={{ color: "#0A7C6E", fontWeight: "600", fontSize: "0.9rem" }} href={`${apiURL}staff_documents/${docForm.working_rights_file_url}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                                <i className="fa-solid fa-arrow-up-right-from-square me-1" style={{ fontSize: "0.75rem" }}></i>
+                                View Uploaded Document
+                              </a>
+                            </div>
+                          </div>
+                        )}
+                        <div className="mt-3 text-center">
+                          <div className="fw-semibold small d-flex align-items-center justify-content-center gap-1" style={{ color: "#0A7C6E" }}>
+                            <i className="fa-solid fa-cloud-arrow-up"></i> Drag & drop or click to replace file
+                          </div>
+                          <div className="text-muted small mt-1" style={{ fontSize: "0.75rem" }}>
+                            Select a new file from your computer to update
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center p-3 d-flex flex-column align-items-center justify-content-center">
+                        <div
+                          className="d-inline-flex align-items-center justify-content-center mb-2 rounded-circle"
+                          style={{
+                            width: "52px",
+                            height: "52px",
+                            backgroundColor: dragActiveField === "working_rights_file" ? "#DCFCE7" : "#F1F5F9",
+                            color: dragActiveField === "working_rights_file" ? "#15803D" : "#0A7C6E",
+                            transition: "all 0.2s ease"
+                          }}
+                        >
+                          <i className="fa-solid fa-cloud-arrow-up fa-lg"></i>
+                        </div>
+                        <p className="fw-bold text-dark mb-1" style={{ fontSize: "0.925rem" }}>
+                          Drag & drop your file here, or <span style={{ color: "#0A7C6E", textDecoration: "underline" }}>browse</span>
+                        </p>
+                        <p className="text-muted small mb-0" style={{ fontSize: "0.78rem" }}>
+                          Supports PDF, DOC, DOCX, JPG, PNG, WEBP (Max 10MB)
+                        </p>
+                      </div>
+                    )}
+                    {uploadLoading && (
+                      <div className="position-absolute top-50 start-50 translate-middle">
+                        <div className="spinner-border text-primary" />
+                        <p className="small mt-1">Uploading...</p>
+                      </div>
+                    )}
+                    <input type="file" style={{ display: "none" }} onChange={handleDocFormChange} name="working_rights_file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp" />
+                  </label>
+                </div>
+                <div className="col-12 col-md-6">
+                  <label className="form-label fw-semibold">Document/Image <span className="text-danger">*</span></label>
+                  <label
+                    className="position-relative p-3 text-center w-100 d-flex flex-column align-items-center justify-content-center"
+                    style={{
+                      minHeight: "200px",
+                      cursor: "pointer",
+                      border: dragActiveField === "file_wr" ? "2px dashed #0A7C6E" : "2px dashed #cbd5e1",
+                      backgroundColor: dragActiveField === "file_wr" ? "#f0fdf4" : "#f8fafc",
+                      borderRadius: "12px",
+                      transition: "all 0.2s ease-in-out",
+                      overflow: "hidden"
+                    }}
+                    onDragOver={(e) => handleDragOver(e, "file_wr")}
+                    onDragLeave={(e) => handleDragLeave(e, "file_wr")}
+                    onDrop={(e) => handleDrop(e, "file_wr")}
+                  >
+                    {docForm.file_url ? (
+                      <div className="d-flex flex-column align-items-center w-100 p-2">
+                        {docForm.file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                          <img src={docForm.file_url.startsWith("http") ? docForm.file_url : `${apiURL}staff_documents/${docForm.file_url}`} alt="Preview" style={{ width: "100%", maxHeight: "140px", objectFit: "contain", borderRadius: "8px", opacity: uploadLoading ? 0.3 : 1 }} />
+                        ) : (
+                          <div className="text-center py-2">
+                            <i className="fa-solid fa-file-pdf fa-3x text-danger mb-2"></i>
+                            <div>
+                              <a style={{ color: "#0A7C6E", fontWeight: "600", fontSize: "0.9rem" }} href={`${apiURL}staff_documents/${docForm.file_url}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                                <i className="fa-solid fa-arrow-up-right-from-square me-1" style={{ fontSize: "0.75rem" }}></i>
+                                View Document
+                              </a>
+                            </div>
+                          </div>
+                        )}
+                        <div className="mt-3 text-center">
+                          <div className="fw-semibold small d-flex align-items-center justify-content-center gap-1" style={{ color: "#0A7C6E" }}>
+                            <i className="fa-solid fa-cloud-arrow-up"></i> Drag & drop or click to replace file
+                          </div>
+                          <div className="text-muted small mt-1" style={{ fontSize: "0.75rem" }}>
+                            Select a new file from your computer to update
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center p-3 d-flex flex-column align-items-center justify-content-center">
+                        <div
+                          className="d-inline-flex align-items-center justify-content-center mb-2 rounded-circle"
+                          style={{
+                            width: "52px",
+                            height: "52px",
+                            backgroundColor: dragActiveField === "file_wr" ? "#DCFCE7" : "#F1F5F9",
+                            color: dragActiveField === "file_wr" ? "#15803D" : "#0A7C6E",
+                            transition: "all 0.2s ease"
+                          }}
+                        >
+                          <i className="fa-solid fa-cloud-arrow-up fa-lg"></i>
+                        </div>
+                        <p className="fw-bold text-dark mb-1" style={{ fontSize: "0.925rem" }}>
+                          Drag & drop your file here, or <span style={{ color: "#0A7C6E", textDecoration: "underline" }}>browse</span>
+                        </p>
+                        <p className="text-muted small mb-0" style={{ fontSize: "0.78rem" }}>
+                          Supports PDF, DOC, DOCX, JPG, PNG, WEBP (Max 10MB)
+                        </p>
+                      </div>
+                    )}
+                    {docValidating && (
+                      <div
+                        className="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center"
+                        style={{
+                          backgroundColor: "rgba(255, 255, 255, 0.94)",
+                          zIndex: 30,
+                          borderRadius: "12px",
+                          backdropFilter: "blur(2px)",
+                        }}
+                      >
+                        <div className="spinner-border" style={{ color: "#0A7C6E", width: "2.4rem", height: "2.4rem" }} role="status" />
+                        <p className="fw-semibold text-dark mt-2 mb-1" style={{ fontSize: "0.95rem" }}>
+                          {docValidationStatus || "Checking document contents..."}
+                        </p>
+                        <span className="text-muted small" style={{ fontSize: "0.78rem" }}>
+                          Verifying document category rules
+                        </span>
+                      </div>
+                    )}
+                    {uploadLoading && (
+                      <div className="position-absolute top-50 start-50 translate-middle">
+                        <div className="spinner-border text-primary" />
+                        <p className="small mt-1">Uploading...</p>
+                      </div>
+                    )}
+                    <input type="file" style={{ display: "none" }} onChange={handleDocFormChange} name="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp" disabled={uploadLoading || docValidating} />
+                  </label>
+                </div>
+              </div>
+
+              {docValidationError && (
+                <div
+                  className="alert alert-danger d-flex align-items-start gap-2 mt-2 p-2 px-3 small border-0 shadow-sm"
+                  style={{ borderRadius: "10px", backgroundColor: "#FEF2F2", color: "#991B1B" }}
+                >
+                  <i className="fa-solid fa-triangle-exclamation mt-1 flex-shrink-0" style={{ color: "#DC2626" }}></i>
+                  <div>
+                    <strong>Verification Notice:</strong> {docValidationError}
+                  </div>
+                </div>
+              )}
+
+              <div className="d-flex gap-2 mt-3">
+                <button type="button" className="btn btn-outline-secondary w-50" onClick={closeDocumentModal} disabled={uploadLoading || submitLoading || docValidating}>Cancel</button>
+                <button type="submit" className="btn btn-success w-50" disabled={uploadLoading || submitLoading || docValidating || !docForm.working_rights_file_path || !docForm.file_path}>
+                  {submitLoading ? "Saving..." : "Upload"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Document Number + Expiry Date side-by-side on desktop */}
+              {(() => {
+                const isWhiteCard =
+                  (docForm.document_type || selectedDoc?.document_type) === "white_card" ||
+                  (docForm.document_name || selectedDoc?.document_name) === "White Card";
+
+                return (
+                  <div className="row g-3">
+                    <div className={isWhiteCard ? "col-12" : "col-12 col-md-6"}>{documentNumberField}</div>
+                    {!isWhiteCard && (
+                      <div className="col-12 col-md-6">
+                        <label className="form-label fw-semibold">Expiry Date <span className="text-danger">*</span></label>
+                        <div className="input-group position-relative">
+                          <button type="button" className="input-group-text bg-white text-muted border-end-0"
+                            onClick={(e) => { e.preventDefault(); const p = document.getElementById("doc_expiry_picker"); if (p) { try { p.showPicker(); } catch (_) { p.focus(); } } }}
+                            style={{ cursor: "pointer", zIndex: 10 }}
+                            disabled={isLicenseRequiringVerify || docForm.document_name === "Visa"}
+                            title="Open Calendar">
+                            <i className="fa-solid fa-calendar-days text-primary"></i>
+                          </button>
+                          <input type="date" id="doc_expiry_picker" className="position-absolute"
+                            style={{ opacity: 0, width: 0, height: 0, pointerEvents: "none", bottom: 0, left: 40 }}
+                            value={docForm.document_expiry ? (() => { const parts = docForm.document_expiry.split("/"); if (parts.length === 3) { const [d, m, y] = parts; return `${y}-${m}-${d}`; } return ""; })() : ""}
+                            onChange={(e) => { const isoDate = e.target.value; if (isoDate) { const [y, m, d] = isoDate.split("-"); setDocForm((prev) => ({ ...prev, document_expiry: `${d}/${m}/${y}` })); } }}
+                            disabled={isLicenseRequiringVerify || docForm.document_name === "Visa"}
+                          />
+                          <input type="text" className="form-control border-start-0 ps-0" name="document_expiry" placeholder="DD/MM/YYYY"
+                            value={docForm.document_expiry}
+                            onChange={(e) => {
+                              let value = e.target.value.replace(/\D/g, "");
+                              if (value.length > 8) value = value.substring(0, 8);
+                              if (value.length > 2 && value.length <= 4) { value = value.replace(/^(\d{2})(\d+)/, "$1/$2"); }
+                              else if (value.length > 4) { value = value.replace(/^(\d{2})(\d{2})(\d+)/, "$1/$2/$3"); }
+                              setDocForm((prev) => ({ ...prev, document_expiry: value }));
+                            }}
+                            required maxLength={10} pattern="^(0[1-9]|[12][0-9]|3[01])/(0[1-9]|1[012])/\d{4}$"
+                            disabled={isLicenseRequiringVerify || docForm.document_name === "Visa"}
+                            style={{ backgroundColor: isLicenseRequiringVerify || docForm.document_name === "Visa" ? "#e9ecef" : "white" }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <div className="mb-3 mt-3">
+                <label className="form-label fw-semibold">Document/Image <span className="text-danger">*</span></label>
+                <label
+                  className="position-relative p-3 text-center w-100 d-flex flex-column align-items-center justify-content-center"
+                  style={{
+                    minHeight: "200px",
+                    cursor: docValidating ? "not-allowed" : "pointer",
+                    border: dragActiveField === "file" ? "2px dashed #0A7C6E" : "2px dashed #cbd5e1",
+                    backgroundColor: dragActiveField === "file" ? "#f0fdf4" : "#f8fafc",
+                    borderRadius: "12px",
+                    transition: "all 0.2s ease-in-out",
+                    overflow: "hidden"
+                  }}
+                  onDragOver={(e) => !docValidating && handleDragOver(e, "file")}
+                  onDragLeave={(e) => !docValidating && handleDragLeave(e, "file")}
+                  onDrop={(e) => !docValidating && handleDrop(e, "file")}
+                >
+                  {docValidating && (
+                    <div
+                      className="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center"
+                      style={{
+                        backgroundColor: "rgba(255, 255, 255, 0.94)",
+                        zIndex: 30,
+                        borderRadius: "12px",
+                        backdropFilter: "blur(2px)",
+                      }}
+                    >
+                      <div className="spinner-border" style={{ color: "#0A7C6E", width: "2.4rem", height: "2.4rem" }} role="status" />
+                      <p className="fw-semibold text-dark mt-2 mb-1" style={{ fontSize: "0.95rem" }}>
+                        {docValidationStatus || "Checking document contents..."}
+                      </p>
+                      <span className="text-muted small" style={{ fontSize: "0.78rem" }}>
+                        Verifying document category and state rules
+                      </span>
+                    </div>
+                  )}
+                  {docForm.file_url ? (
+                    <div className="d-flex flex-column align-items-center w-100 p-2">
+                      {docForm.file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                        <img src={docForm.file_url.startsWith("http") ? docForm.file_url : `${apiURL}staff_documents/${docForm.file_url}`} alt="Preview" style={{ maxWidth: "100%", maxHeight: "140px", objectFit: "contain", borderRadius: "8px", opacity: (uploadLoading || docValidating) ? 0.3 : 1 }} />
+                      ) : (
+                        <div className="text-center py-2">
+                          <i className="fa-solid fa-file-pdf fa-3x text-danger mb-2"></i>
+                          <div>
+                            <a style={{ color: "#0A7C6E", fontWeight: "600", fontSize: "0.9rem" }} href={`${apiURL}staff_documents/${docForm.file_url}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                              <i className="fa-solid fa-arrow-up-right-from-square me-1" style={{ fontSize: "0.75rem" }}></i>
+                              View Document
+                            </a>
+                          </div>
+                        </div>
+                      )}
+                      <div className="mt-3 text-center">
+                        <div className="fw-semibold small d-flex align-items-center justify-content-center gap-1" style={{ color: "#0A7C6E" }}>
+                          <i className="fa-solid fa-cloud-arrow-up"></i> Drag & drop or click to replace file
+                        </div>
+                        <div className="text-muted small mt-1" style={{ fontSize: "0.75rem" }}>
+                          Select a new file from your computer to update
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center p-3 d-flex flex-column align-items-center justify-content-center">
+                      <div
+                        className="d-inline-flex align-items-center justify-content-center mb-2 rounded-circle"
+                        style={{
+                          width: "52px",
+                          height: "52px",
+                          backgroundColor: dragActiveField === "file" ? "#DCFCE7" : "#F1F5F9",
+                          color: dragActiveField === "file" ? "#15803D" : "#0A7C6E",
+                          transition: "all 0.2s ease"
+                        }}
+                      >
+                        <i className="fa-solid fa-cloud-arrow-up fa-lg"></i>
+                      </div>
+                      <p className="fw-bold text-dark mb-1" style={{ fontSize: "0.925rem" }}>
+                        Drag & drop your file here, or <span style={{ color: "#0A7C6E", textDecoration: "underline" }}>browse</span>
+                      </p>
+                      <p className="text-muted small mb-0" style={{ fontSize: "0.78rem" }}>
+                        Supports PDF, DOC, DOCX, JPG, PNG, WEBP (Max 10MB)
+                      </p>
+                    </div>
+                  )}
+                  {uploadLoading && (
+                    <div className="position-absolute top-50 start-50 translate-middle" style={{ zIndex: 15 }}>
+                      <div className="spinner-border text-primary" />
+                      <p className="small mt-1">Uploading...</p>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    style={{ display: "none" }}
+                    onChange={handleDocFormChange}
+                    name="file"
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp"
+                    disabled={uploadLoading || docValidating}
+                  />
+                </label>
+
+                {docValidationError && (
+                  <div
+                    className="alert alert-danger d-flex align-items-start gap-2 mt-2 p-2 px-3 small border-0 shadow-sm"
+                    style={{ borderRadius: "10px", backgroundColor: "#FEF2F2", color: "#991B1B" }}
+                  >
+                    <i className="fa-solid fa-triangle-exclamation mt-1 flex-shrink-0" style={{ color: "#DC2626" }}></i>
+                    <div>
+                      <strong>Verification Notice:</strong> {docValidationError}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="d-flex gap-2">
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary w-50"
+                  onClick={closeDocumentModal}
+                  disabled={uploadLoading || submitLoading || docValidating}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-success w-50"
+                  disabled={uploadLoading || submitLoading || docValidating || (!(((docForm.document_type || selectedDoc?.document_type) === "white_card") || ((docForm.document_name || selectedDoc?.document_name) === "White Card")) && !docForm.document_expiry) || !docForm.file_url}
+                >
+                  {submitLoading ? "Saving..." : "Upload"}
+                </button>
+              </div>
+            </>
+          )}
+        </form>
+      </PremiumModal>
+
+      {/* Cover Jobs Modal */}
+      <PremiumModal
+        open={showCoverJobsModal}
+        onClose={() => setShowCoverJobsModal(false)}
+        title="Cover Jobs Available!"
+      >
+        <div className="px-2 px-md-3 py-4 text-center">
+          <div
+            className="d-inline-flex align-items-center justify-content-center rounded-circle mb-3"
+            style={{ width: "80px", height: "80px", backgroundColor: "#E8F6F3", color: "#0A7C6E" }}
+          >
+            <i className="fa-solid fa-briefcase fa-2x"></i>
+          </div>
+          <h4 className="fw-bold mb-3" style={{ color: "#0A7C6E" }}>
+            You have {userdata?.data?.available_jobs_count || userdata?.available_jobs_count || 0} cover jobs available!
+          </h4>
+          <p className="text-muted mb-4">
+            Take a look and accept the ones that work best for your schedule.
+          </p>
+          <div className="d-flex justify-content-center gap-3">
+            <button
+              type="button"
+              className="btn btn-outline-secondary px-4 fw-bold rounded-pill"
+              onClick={() => setShowCoverJobsModal(false)}
+            >
+              Maybe Later
+            </button>
+            <Link
+              to="/cover-jobs"
+              className="btn btn-dark px-4 fw-bold rounded-pill shadow-sm"
+              onClick={() => setShowCoverJobsModal(false)}
+            >
+              View Cover Jobs <i className="fa-solid fa-arrow-right ms-2"></i>
+            </Link>
+          </div>
+        </div>
+      </PremiumModal>
+
+      {/* Missing Charge Rates Modal */}
+      <PremiumModal
+        open={showChargeRateModal}
+        onClose={() => setShowChargeRateModal(false)}
+        title="Complete Your Profile Requirements"
+      >
+        <div className="px-2 px-md-3 py-3">
+          {/* Steps */}
+          <div className="position-relative">
+
+            {/* Connecting Line */}
+            <div
+              className="position-absolute d-none d-md-block"
+              style={{
+                left: "27px",
+                top: "45px",
+                bottom: "45px",
+                width: "2px",
+                backgroundColor: "#DDEBE8",
+                zIndex: 0,
+              }}
+            ></div>
+
+            {/* STEP 1 */}
+            <div className="d-flex position-relative mb-4">
+              <div
+                className="flex-shrink-0 d-flex align-items-center justify-content-center rounded-circle fw-bold"
+                style={{
+                  width: "54px",
+                  height: "54px",
+                  backgroundColor: "#E8F6F3",
+                  color: "#0A7C6E",
+                  border: "2px solid #0A7C6E",
+                  zIndex: 1,
+                }}
+              >
+                1
+              </div>
+
+              <div className="ms-3 pt-1">
+                <div className="d-flex align-items-center gap-2 mb-1">
+                  <h6 className="fw-bold mb-0">
+                    Select Your States Licensed
+                  </h6>
+                </div>
+
+                <p className="text-muted mb-0" style={{ fontSize: "13px" }}>
+                  Select the states where you currently hold a valid
+                  <strong className="text-dark"> Security Master License</strong>.
+                </p>
+              </div>
+            </div>
+
+            {/* STEP 2 */}
+            <div className="d-flex position-relative mb-4">
+              <div
+                className="flex-shrink-0 d-flex align-items-center justify-content-center rounded-circle fw-bold"
+                style={{
+                  width: "54px",
+                  height: "54px",
+                  backgroundColor: "#FFF7E6",
+                  color: "#D99000",
+                  border: "2px solid #F0B429",
+                  zIndex: 1,
+                }}
+              >
+                2
+              </div>
+
+              <div className="ms-3 pt-1">
+                <h6 className="fw-bold mb-1">
+                  Upload Required Documents
+                </h6>
+
+                <p className="text-muted mb-0" style={{ fontSize: "13px" }}>
+                  Add the required license and supporting documents for each
+                  state you selected.
+                </p>
+              </div>
+            </div>
+
+            {/* STEP 3 */}
+            <div className="d-flex position-relative mb-3">
+              <div
+                className="flex-shrink-0 d-flex align-items-center justify-content-center rounded-circle fw-bold"
+                style={{
+                  width: "54px",
+                  height: "54px",
+                  backgroundColor: "#F0EBFF",
+                  color: "#6F42C1",
+                  border: "2px solid #6F42C1",
+                  zIndex: 1,
+                }}
+              >
+                3
+              </div>
+
+              <div className="ms-3 pt-1">
+                <h6 className="fw-bold mb-1">
+                  Request Charge Rates
+                </h6>
+
+                <p className="text-muted mb-0" style={{ fontSize: "13px" }}>
+                  Once your states and documents are complete, request the
+                  <strong className="text-dark"> charge rates</strong> applicable
+                  to your selected states.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Info Box */}
+          <div
+            className="mt-4 p-3 rounded-3 d-flex align-items-start"
+            style={{
+              backgroundColor: "#F3F8F7",
+              border: "1px solid #D8ECE8",
+            }}
+          >
+            <i
+              className="fa-solid fa-circle-info mt-1 me-3"
+              style={{
+                color: "#0A7C6E",
+                fontSize: "17px",
+              }}
+            ></i>
+
+            <div>
+              <div className="fw-bold mb-1" style={{ fontSize: "13px" }}>
+                Why is this required?
+              </div>
+
+              <div className="text-muted" style={{ fontSize: "12px" }}>
+                Your charge rates are based on the states where you are
+                licensed and verified. Completing all three steps ensures
+                your profile is ready to operate in those states.
+              </div>
+            </div>
+          </div>
+        </div>
+      </PremiumModal>
+
+    </div>
+  );
+}
