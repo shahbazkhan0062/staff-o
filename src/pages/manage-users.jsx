@@ -2568,7 +2568,7 @@ const ManageUsers = () => {
             <div className="d-flex align-items-center gap-2 flex-wrap">
               {AUSTRALIAN_STATE_PILLS.map((pill) => {
                 const isActive = selectedState === pill.value;
-                const count = activeTab === "sub_contractor" ? contractorStateCounts[pill.value] : undefined;
+                const count = contractorStateCounts[pill.value];
                 return (
                   <button
                     key={pill.value}

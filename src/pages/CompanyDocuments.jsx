@@ -51,7 +51,6 @@ const CompanyDocuments = () => {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadName, setUploadName] = useState("");
   const [uploadFile, setUploadFile] = useState(null);
-  const [uploadExpiry, setUploadExpiry] = useState("");
   const [editingFile, setEditingFile] = useState(null); // file being edited
 
   const [deleteTarget, setDeleteTarget] = useState(null); // { type: 'folder'|'file', id, label }
@@ -160,7 +159,6 @@ const CompanyDocuments = () => {
     setEditingFile(null);
     setUploadName("");
     setUploadFile(null);
-    setUploadExpiry("");
     setShowUploadModal(true);
   };
 
@@ -168,7 +166,6 @@ const CompanyDocuments = () => {
     setEditingFile(file);
     setUploadName(file.name || "");
     setUploadFile(null);
-    setUploadExpiry(file.expiry_date ? file.expiry_date.substring(0, 10) : "");
     setShowUploadModal(true);
   };
 
@@ -177,7 +174,6 @@ const CompanyDocuments = () => {
     setEditingFile(null);
     setUploadName("");
     setUploadFile(null);
-    setUploadExpiry("");
   };
 
   const handleSaveFile = async () => {
@@ -194,10 +190,15 @@ const CompanyDocuments = () => {
       return;
     }
 
+    // Expiry field removed from the form — always send a date 15 years from today.
+    const expiryDate = new Date();
+    expiryDate.setFullYear(expiryDate.getFullYear() + 15);
+    const expiryDateStr = expiryDate.toISOString().substring(0, 10);
+
     const formData = new FormData();
     formData.append("folder_id", currentFolder.id);
     formData.append("name", uploadName.trim());
-    if (uploadExpiry) formData.append("expiry_date", uploadExpiry);
+    formData.append("expiry_date", expiryDateStr);
     if (uploadFile) formData.append("file", uploadFile);
     if (editingFile) formData.append("id", editingFile.id);
 
@@ -542,10 +543,6 @@ const CompanyDocuments = () => {
         <div className="cd-form-group">
           <label>Upload File{editingFile ? " (leave empty to keep existing file)" : ""}</label>
           <input type="file" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
-        </div>
-        <div className="cd-form-group">
-          <label>Expiry</label>
-          <input type="date" value={uploadExpiry} onChange={(e) => setUploadExpiry(e.target.value)} />
         </div>
         <button className="cd-btn cd-btn-primary cd-modal-save" onClick={handleSaveFile} disabled={submitting} type="button">
           {submitting ? "Saving..." : "Save"}

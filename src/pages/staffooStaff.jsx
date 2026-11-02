@@ -429,6 +429,13 @@ const StaffooStaff = () => {
     const [staff, setStaff] = useState([]);
     const [totalPages, setTotalPages] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
+
+    // Per-state counts for the state filter pills (same as shown in the Resource Partner tab)
+    const stateCounts = useMemo(
+        () => ({ ...(apiResponse?.state_counts || {}), all: totalItems }),
+        [apiResponse, totalItems]
+    );
+
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isViewMode, setIsViewMode] = useState(false);
     const [activeModalTab, setActiveModalTab] = useState("personal");
@@ -1498,6 +1505,7 @@ const StaffooStaff = () => {
                         <div className="d-flex align-items-center gap-2 flex-wrap">
                             {AUSTRALIAN_STATE_PILLS.map((pill) => {
                                 const isActive = selectedState === pill.value;
+                                const count = stateCounts[pill.value];
                                 return (
                                     <button
                                         key={pill.value}
@@ -1510,7 +1518,7 @@ const StaffooStaff = () => {
                                                 ? "linear-gradient(135deg, #0A7C6E 0%, #075e53 100%)"
                                                 : "#ffffff",
                                             color: isActive ? "#ffffff" : "#475569",
-                                            padding: "6px 14px",
+                                            padding: count !== undefined ? "5px 10px 5px 14px" : "6px 14px",
                                             borderRadius: "50px",
                                             fontSize: "0.825rem",
                                             fontWeight: isActive ? 600 : 500,
@@ -1521,9 +1529,44 @@ const StaffooStaff = () => {
                                                 : "0 1px 2px rgba(0,0,0,0.03)",
                                             display: "inline-flex",
                                             alignItems: "center",
+                                            gap: "7px",
                                         }}
                                     >
-                                        {pill.label}
+                                        <span>{pill.label}</span>
+                                        {count !== undefined && (
+                                            <span
+                                                className="badge rounded-pill state-pill-badge"
+                                                style={{
+                                                    fontSize: "0.72rem",
+                                                    fontWeight: 700,
+                                                    padding: "2px 7px",
+                                                    minWidth: "20px",
+                                                    height: "19px",
+                                                    display: "inline-flex",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    background: isActive
+                                                        ? "rgba(255, 255, 255, 0.28)"
+                                                        : (count || 0) > 0
+                                                            ? "rgba(10, 124, 110, 0.12)"
+                                                            : "#f1f5f9",
+                                                    color: isActive
+                                                        ? "#ffffff"
+                                                        : (count || 0) > 0
+                                                            ? "#0A7C6E"
+                                                            : "#94a3b8",
+                                                    border: isActive
+                                                        ? "1px solid rgba(255, 255, 255, 0.45)"
+                                                        : (count || 0) > 0
+                                                            ? "1px solid rgba(10, 124, 110, 0.25)"
+                                                            : "1px solid #e2e8f0",
+                                                    lineHeight: 1,
+                                                    transition: "all 0.15s ease",
+                                                }}
+                                            >
+                                                {count || 0}
+                                            </span>
+                                        )}
                                     </button>
                                 );
                             })}
