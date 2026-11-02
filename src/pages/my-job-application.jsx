@@ -582,6 +582,10 @@ export default function MyJobApplications() {
         toast.error("End time must be after start time.");
         return;
       }
+      if (diffHours > 12) {
+        toast.error("You cannot update job hours > 12.");
+        return;
+      }
 
       payload = {
         id: editModalApp.id,
@@ -598,6 +602,22 @@ export default function MyJobApplications() {
     if (res?.confirm_required) {
       setPendingEditPayload(payload);
       setEditTimeBreakdown(res.breakdown || {});
+      return;
+    }
+
+    // A staff member is already on this shift — the backend doesn't apply
+    // the new time directly, it holds it as a pending request until the
+    // staff member confirms or declines (see JobRosterController's
+    // respondRosterTimeChange()). Previously this fell through to the
+    // generic success toast below and closed the modal with no indication
+    // that the time on screen hadn't actually changed yet — which is why
+    // it looked like the update silently didn't go through.
+    if (res?.pending_staff_response) {
+      toast.info(
+        res.message ||
+          "The assigned staff member has been notified of the new time and must confirm it before it's applied."
+      );
+      closeEditModal();
       return;
     }
 
@@ -2312,6 +2332,17 @@ export default function MyJobApplications() {
                           Min 4 hrs recommended
                         </span>
                       )}
+                      {computedEditDuration.hours > 12 && (
+                        <span className="badge bg-danger-subtle text-danger border border-danger-subtle" style={{ fontSize: "11px" }}>
+                          Max 12 hrs allowed
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {computedEditDuration && computedEditDuration.hours > 12 && (
+                    <div className="mt-2 small fw-semibold text-danger" style={{ textTransform: "none" }}>
+                      <i className="fa-solid fa-triangle-exclamation me-1"></i>
+                      You cannot update job hours &gt; 12 hrs.
                     </div>
                   )}
                 </>
@@ -2414,7 +2445,7 @@ export default function MyJobApplications() {
                 type="button"
                 onClick={handleSaveEdit}
                 className="btn btn-primary-custom px-4 rounded-pill fw-semibold shadow-sm"
-                disabled={actionLoading}
+                disabled={actionLoading || (!editTimeBreakdown && computedEditDuration && computedEditDuration.hours > 12)}
               >
                 {actionLoading ? (
                   <>
