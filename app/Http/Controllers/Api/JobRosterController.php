@@ -43,6 +43,7 @@ use App\Services\ContractorInvoiceService;
 use Illuminate\Support\Facades\Storage;
 use App\Mail\ContractorJobInvoice;
 use App\Mail\JobSplitNotificationMail;
+use App\Mail\RosterNotificationMail;
 use App\Mail\PlatformFeeInvoiceMail;
 use App\Mail\ResourcePartnerRemovedAdmin;
 use App\Mail\ResourcePartnerRemovedClient;
@@ -62,14 +63,14 @@ class JobRosterController extends Controller
     // Admin inboxes/numbers that get copied on job-cancellation and
     // job-posting alerts, in addition to the in-app admin push notification.
     private const ADMIN_ALERT_EMAILS = [
-        // 'Amrit.Arora@Staffoo.com.au',
-        // 'skumraa@staffoo.com.au',
+        'Amrit.Arora@Staffoo.com.au',
+        'skumraa@staffoo.com.au',
         'shahbazkhan062@gmail.com',
     ];
 
     private const ADMIN_ALERT_PHONES = [
-        // '+61493899403',
-        // '+61478916034',
+        '+61493899403',
+        '+61478916034',
         '+923320327515',
     ];   
     
@@ -3272,18 +3273,18 @@ private function sendStaffActivationNotification(User $user): void
             }
         }
 
-        // Plain-text email notification — used for the new roster-time-change
-        // flows where there's no dedicated Mailable/Blade view to build.
-        private function notifyByEmail($user, string $subject, string $message): void
+        // Branded email notification (Staffoo logo + footer) used for the
+        // roster-time-change flows where there's no dedicated Mailable/Blade
+        // view of its own — reuses the shared RosterNotificationMail template.
+        private function notifyByEmail($user, string $subject, string $message, array $meta = []): void
         {
             if (!$user || empty($user->email)) {
                 return;
             }
 
             try {
-                Mail::raw($message, function ($m) use ($user, $subject) {
-                    $m->to($user->email, $user->name ?? '')->subject($subject);
-                });
+                Mail::to($user->email, $user->name ?? '')
+                    ->send(new RosterNotificationMail($user->name ?? '', $subject, $message, $meta));
             } catch (\Exception $e) {
                 Log::error('[Roster Time Change] email notification failed', ['error' => $e->getMessage()]);
             }
@@ -3491,6 +3492,24 @@ private function sendStaffActivationNotification(User $user): void
         {
             $result = $this->applyRosterTimeChange($jobRosterTime, $changeRequest->new_start, $changeRequest->new_end, true, $changeRequest->requested_by);
 
+            // Let the contractor, the confirming staff member, and admin know
+            // the new time is locked in — this was previously missing, which
+            // is why nothing showed up on accept.
+            try {
+                $staff      = User::find($jobRosterTime->assigned_to);
+                $contractor = !empty($jobRosterTime->accepted_by) ? User::find($jobRosterTime->accepted_by) : null;
+                $admin      = User::where('user_type', 'admin')->first();
+                $title      = 'Shift Time Confirmed';
+                $message    = 'The shift time change has been confirmed by the staff member. The shift is updated and an invoice has been sent to the client.';
+
+                foreach (array_filter([$staff, $contractor, $admin]) as $recipient) {
+                    $this->sendAppNotification($recipient, $title, $message, ['roster_id' => $jobRosterTime->id]);
+                    $this->notifyByEmail($recipient, $title, $message);
+                }
+            } catch (\Exception $e) {
+                Log::error('[Roster Time Change] case 3 accept notify failed', ['error' => $e->getMessage()]);
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Staff confirmed the new time. Shift updated and invoice sent to the client.',
@@ -3600,6 +3619,25 @@ private function sendStaffActivationNotification(User $user): void
             $invoiceResult = null;
             if (!empty($jobRosterTime->payment_intent_id) && str_starts_with((string) $jobRosterTime->payment_intent_id, 'pi_')) {
                 $invoiceResult = $this->syncPaymentForIntent($jobRosterTime->payment_intent_id, $changeRequest->requested_by, true);
+            }
+
+            // Let the contractor (case 4 only — case 6 has none), the
+            // confirming staff member, and admin know the extra hours were
+            // charged — this was previously missing, which is why nothing
+            // showed up on accept.
+            try {
+                $staff      = User::find($jobRosterTime->assigned_to);
+                $contractor = !empty($jobRosterTime->accepted_by) ? User::find($jobRosterTime->accepted_by) : null;
+                $admin      = User::where('user_type', 'admin')->first();
+                $title      = 'Shift Time Confirmed — Extra Hours Charged';
+                $message    = 'The shift time change has been confirmed by the staff member. The extra hours have been charged and an updated invoice has been sent to the client.';
+
+                foreach (array_filter([$staff, $contractor, $admin]) as $recipient) {
+                    $this->sendAppNotification($recipient, $title, $message, ['roster_id' => $jobRosterTime->id]);
+                    $this->notifyByEmail($recipient, $title, $message);
+                }
+            } catch (\Exception $e) {
+                Log::error('[Roster Time Change] case 4/6 accept notify failed', ['error' => $e->getMessage()]);
             }
 
             return response()->json([
