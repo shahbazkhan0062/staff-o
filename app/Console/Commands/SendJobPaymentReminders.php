@@ -104,7 +104,7 @@ class SendJobPaymentReminders extends Command
         }
 
         // ── One consolidated digest to admin, covering every client ──
-        $adminAddress = config('mail.staffoo_admin_address', 'admin@staffoo.com.au');
+        $adminAddress = config('mail.staffoo_admin_address', 'Amrit.Arora@Staffoo.com.au');
         if (!empty($adminDigestJobs)) {
             try {
                 Mail::to($adminAddress)->send(new PaymentReminderMail(

@@ -780,7 +780,7 @@ class SendJobNotificationJob implements ShouldQueue
 
     private function triggerAdminEscalation($jobs): void
     {
-        $adminEmail = 'admin@staffoo.com.au';
+        $adminEmail = 'Amrit.Arora@Staffoo.com.au';
         $admin = User::find(1);
 
         $jobCollection = $jobs instanceof \Illuminate\Support\Collection ? $jobs : collect([$jobs]);

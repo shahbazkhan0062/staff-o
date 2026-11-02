@@ -62,14 +62,14 @@ class JobRosterController extends Controller
     // Admin inboxes/numbers that get copied on job-cancellation and
     // job-posting alerts, in addition to the in-app admin push notification.
     private const ADMIN_ALERT_EMAILS = [
-        // 'Amrit.Arora@Staffoo.com.au',
-        // 'skumraa@staffoo.com.au',
+        'Amrit.Arora@Staffoo.com.au',
+        'skumraa@staffoo.com.au',
         'shahbazkhan062@gmail.com',
     ];
 
     private const ADMIN_ALERT_PHONES = [
-        // '+61493899403',
-        // '+61478916034',
+        '+61493899403',
+        '+61478916034',
         '+923320327515',
     ];   
     
@@ -7531,7 +7531,7 @@ public function contractor_accept_job(Request $request, $id)
                 'roster_id'       => $updatedRoster->id,
             ];
             Mail::send('emails.admin_job_accepted', $adminEmailData, function ($message) {
-                $message->to('admin@staffoo.com.au')
+                $message->to('Amrit.Arora@Staffoo.com.au')
                         ->subject('Job Accepted - Admin Notification');
             });
         } catch (\Exception $e) {
@@ -9062,7 +9062,7 @@ public function releaseContractorPayout($rosterId)
 
     // 6. Email the fee invoice to the contractor AND to Staffoo admin
     if ($feePdfBytes) {
-        $adminAddress = config('mail.staffoo_admin_address', 'admin@staffoo.com.au');
+        $adminAddress = config('mail.staffoo_admin_address', 'Amrit.Arora@Staffoo.com.au');
 
         if (!empty($contractor->email)) {
             try {
@@ -9342,13 +9342,13 @@ private function sendResourcePartnerRemovedEmail(JobRoster $job, $oldAcceptedBy)
         ]);
 
         // ============ SEND EMAIL TO ADMIN ============
-        Mail::to('admin@staffoo.com.au', 'Staffoo Admin')
-            ->cc('admin@staffoo.com.au')
+        Mail::to('Amrit.Arora@Staffoo.com.au', 'Staffoo Admin')
+            ->cc('skumraa@staffoo.com.au')
             ->send(new ResourcePartnerRemovedAdmin($job, $client, $resourcePartner));
 
         Log::info('Resource partner removed email sent to admin', [
             'job_id' => $job->id,
-            'admin_email' => 'admin@staffoo.com.au'
+            'admin_email' => 'skumraa@staffoo.com.au'
         ]);
 
     } catch (\Exception $e) {
@@ -9573,7 +9573,7 @@ private function generateAndSendSignedContract($contractor, $rateRequest, $charg
         }
 
         // Email signed copy to admin
-        $adminAddress = config('mail.staffoo_admin_address', 'admin@staffoo.com.au');
+        $adminAddress = config('mail.staffoo_admin_address', 'Amrit.Arora@Staffoo.com.au');
         try {
             Mail::to($adminAddress)->send(new ContractSignedMail(
                 'Admin',
@@ -9763,7 +9763,7 @@ public function signContract(Request $request, $token)
         }
  
         // Email signed copy to admin
-        $adminAddress = config('mail.staffoo_admin_address', 'admin@staffoo.com.au');
+        $adminAddress = config('mail.staffoo_admin_address', 'Amrit.Arora@Staffoo.com.au');
         try {
             Mail::to($adminAddress)->send(new ContractSignedMail(
                 'Admin',

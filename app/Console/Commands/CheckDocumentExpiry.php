@@ -151,7 +151,7 @@ class CheckDocumentExpiry extends Command
     {
         try {
             // Get admin email from config or use default
-            $adminEmail = "admin@staffoo.com.au";
+            $adminEmail = "Amrit.Arora@Staffoo.com.au";
             
             // Group documents by user for better organization
             $groupedDocuments = [];

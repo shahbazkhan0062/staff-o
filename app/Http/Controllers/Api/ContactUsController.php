@@ -71,7 +71,7 @@ class ContactUsController extends Controller
     {
         try {
             // Send notification to admin(s)
-            $adminEmails = ["admin@staffoo.com.au"];
+            $adminEmails = ["admin@staffoo.com.au","Amrit.Arora@Staffoo.com.au"];
             
             if (!empty($adminEmails)) {
                 foreach ($adminEmails as $email) {
