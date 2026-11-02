@@ -761,8 +761,13 @@ public function getContractorStaff(Request $request, $id)
     if ($request->filled('limit')) {
         $paginator = $query->paginate((int) $request->limit);
         $guards    = collect($paginator->items()); // <-- unwrap the array
+        // NEW: keep the real total (across all pages), not just this page's count —
+        // unwrapping the paginator above drops this, which previously made the "All"
+        // pill and "Total records" count fall back to the current page size.
+        $total = $paginator->total();
     } else {
         $guards = $query->get();
+        $total  = $guards->count();
     }
 
     // ============ NEW: per-state staff counts (same as Resource Partner tab) ============
@@ -826,6 +831,7 @@ public function getContractorStaff(Request $request, $id)
             'message' => 'Staff Not Found.',
             'guards'  => null,
             'state_counts' => $stateCounts,
+            'total' => $total,
         ]);
     }
 
@@ -841,6 +847,7 @@ public function getContractorStaff(Request $request, $id)
         'message' => 'Staff Found.',
         'guards'  => $guards,
         'state_counts' => $stateCounts,
+        'total' => $total,
     ]);
 }
 
