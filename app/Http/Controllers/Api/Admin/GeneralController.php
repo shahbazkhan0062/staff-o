@@ -13,6 +13,7 @@ use App\Models\Customer;
 use App\Models\Contractor;
 use App\Models\Document;
 use App\Services\InductionAssignmentService;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
