@@ -62,15 +62,17 @@ class JobRosterController extends Controller
     // Admin inboxes/numbers that get copied on job-cancellation and
     // job-posting alerts, in addition to the in-app admin push notification.
     private const ADMIN_ALERT_EMAILS = [
-        'Amrit.Arora@Staffoo.com.au',
-        'skumraa@staffoo.com.au',
+        // 'Amrit.Arora@Staffoo.com.au',
+        // 'skumraa@staffoo.com.au',
         'shahbazkhan062@gmail.com',
     ];
 
     private const ADMIN_ALERT_PHONES = [
-        '+61493899403',
-        '+61478916034',
+        // '+61493899403',
+        // '+61478916034',
+        '+923320327515',
     ];   
+    
     public function jobData(Request $request)
     {
         // ─── VALIDATION ──────────────────────────────────────────────────────
