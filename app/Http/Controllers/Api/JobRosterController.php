@@ -765,18 +765,73 @@ public function getContractorStaff(Request $request, $id)
         $guards = $query->get();
     }
 
+    // ============ NEW: per-state staff counts (same as Resource Partner tab) ============
+    // Built from the SAME search/status/city/country filters as above, but
+    // WITHOUT the 'state' filter — so all 8 counts are always returned together,
+    // regardless of which state (if any) the request is filtering by, and even
+    // when the current page/filter has no results.
+    $stateCountsMap = [
+        'vic' => ['vic', 'victoria'],
+        'nsw' => ['nsw', 'new south wales'],
+        'qld' => ['qld', 'queensland'],
+        'sa'  => ['sa',  'south australia'],
+        'wa'  => ['wa',  'western australia'],
+        'tas' => ['tas', 'tasmania'],
+        'act' => ['act', 'australian capital territory'],
+        'nt'  => ['nt',  'northern territory'],
+    ];
+
+    $stateCounts = [];
+    foreach ($stateCountsMap as $stateKey => $aliases) {
+        $countQuery = User::where('user_id', $id)->where('user_type', 'staff');
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $countQuery->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%")
+                  ->orWhereHas('staff', function ($q) use ($search) {
+                      $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('phone', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        if ($request->filled('status')) {
+            if ($request->status === 'active') {
+                $countQuery->where('is_active', 1);
+            } elseif ($request->status === 'inactive') {
+                $countQuery->where('is_active', 0);
+            }
+        }
+
+        if ($request->filled('city')) {
+            $countQuery->where('city', $request->city);
+        }
+
+        if ($request->filled('country')) {
+            $countQuery->where('country', $request->country);
+        }
+
+        $countQuery->whereIn(DB::raw('LOWER(state)'), $aliases);
+
+        $stateCounts[$stateKey] = $countQuery->count();
+    }
+    // ============ END NEW ============
+
     if ($guards->isEmpty()) {
         return response()->json([
             'code'    => 200,
             'success' => false,
             'message' => 'Staff Not Found.',
             'guards'  => null,
+            'state_counts' => $stateCounts,
         ]);
     }
 
     foreach ($guards as $staff) {
         if($staff->admin_approved == 1){
-         $this->calculateStaffProfileCompletion($staff);    
+         $this->calculateStaffProfileCompletion($staff);
         }
     }
 
@@ -785,6 +840,7 @@ public function getContractorStaff(Request $request, $id)
         'success' => true,
         'message' => 'Staff Found.',
         'guards'  => $guards,
+        'state_counts' => $stateCounts,
     ]);
 }
 

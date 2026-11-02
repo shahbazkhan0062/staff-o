@@ -88,10 +88,63 @@ class CustomerController extends Controller
         } else {
             $customers = $query->get();
         }
-        
+
+        // ============ NEW: per-state customer counts (same as Resource Partner tab) ============
+        // Built from the SAME search/status/city/country filters as above, but
+        // WITHOUT the 'state' filter — so all 8 counts are always returned together.
+        $stateCountsMap = [
+            'vic' => ['vic', 'victoria'],
+            'nsw' => ['nsw', 'new south wales'],
+            'qld' => ['qld', 'queensland'],
+            'sa'  => ['sa',  'south australia'],
+            'wa'  => ['wa',  'western australia'],
+            'tas' => ['tas', 'tasmania'],
+            'act' => ['act', 'australian capital territory'],
+            'nt'  => ['nt',  'northern territory'],
+        ];
+
+        $stateCounts = [];
+        foreach ($stateCountsMap as $stateKey => $aliases) {
+            $countQuery = User::where('user_type', 'customer');
+
+            if ($request->has('search')) {
+                $search = $request->search;
+                $countQuery->where(function($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                      ->orWhere('email', 'like', "%{$search}%")
+                      ->orWhereHas('customer', function($q) use ($search) {
+                          $q->where('company_name', 'like', "%{$search}%")
+                            ->orWhere('phone', 'like', "%{$search}%");
+                      });
+                });
+            }
+
+            if ($request->has('status')) {
+                if ($request->status === 'active') {
+                    $countQuery->where('is_active', 1);
+                } elseif ($request->status === 'inactive') {
+                    $countQuery->where('is_active', 0);
+                }
+            }
+
+            if ($request->has('city')) {
+                $countQuery->where('city', $request->city);
+            }
+
+            if ($request->has('country')) {
+                $countQuery->where('country', $request->country);
+            }
+
+            $countQuery->whereIn(DB::raw('LOWER(state)'), $aliases);
+
+            $stateCounts[$stateKey] = $countQuery->count();
+        }
+        // ============ END NEW ============
+
         return response()->json([
             'success' => true,
             'data' => $customers,
+            'state_counts' => $stateCounts,
             'message' => 'Customers retrieved successfully'
         ]);
     }
