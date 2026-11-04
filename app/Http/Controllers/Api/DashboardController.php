@@ -55,10 +55,11 @@ class DashboardController extends Controller
             "SELECT COALESCE(SUM(job_amount), 0) AS total FROM job_rosters WHERE job_status != 'cancelled'"
         )->total;
 
-        $thisMonthRevenue = DB::selectOne(
+       $thisMonthRevenue = DB::selectOne(
             "SELECT COALESCE(SUM(job_amount), 0) AS total
-             FROM job_rosters WHERE job_status != 'cancelled'
-             WHERE start BETWEEN ? AND ?",
+            FROM job_rosters
+            WHERE job_status != 'cancelled'
+            AND start BETWEEN ? AND ?",
             [$monthStart, $monthEnd]
         )->total;
 

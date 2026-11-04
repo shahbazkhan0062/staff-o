@@ -87,7 +87,7 @@
 
             <div class="message">
                 <p>Best regards,<br>
-                <strong>Staffoo System</strong></p>
+                <strong>Staffoo Team</strong></p>
             </div>
         </div>
 
