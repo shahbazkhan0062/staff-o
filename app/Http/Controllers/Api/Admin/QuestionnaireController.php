@@ -227,6 +227,11 @@ public function assignQuestionnair(Request $request){
      $guardQNADetails->update();
      $guardQNADetails->refresh();
 
+     DB::table('induction_history')
+        ->where('guard_id', $request->guard_id)
+        ->where('induction_id', $guardQNADetails->questionnaire_id)
+        ->update(['read_status' => 1]);
+
      if($marks >= 80){
          $config_title = 'STAFFOO';
          $from = 'no-reply@staffoo.com.au';
