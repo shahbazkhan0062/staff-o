@@ -614,7 +614,7 @@ html { scroll-behavior: smooth; } */
 }
 
 .nh-stat {
-  padding: 40px 0;
+  padding: 32px 20px;
   text-align: center;
   border-left: 1px solid var(--nh-border);
 }
@@ -626,9 +626,10 @@ html { scroll-behavior: smooth; } */
 .nh-stat b {
   display: block;
   font-family: 'Barlow Semi Condensed', sans-serif;
-  font-size: 34px;
+  font-size: 21px;
   color: var(--nh-green-dark);
-  font-weight: 900;
+  font-weight: 800;
+  margin-bottom: 6px;
 }
 
 .nh-stat span {
@@ -916,6 +917,12 @@ html { scroll-behavior: smooth; } */
   color: var(--nh-ink-soft);
   border-left: 2px solid var(--nh-green);
   padding-left: 12px;
+}
+
+.nh-case-desc {
+  font-size: 13.5px;
+  color: var(--nh-text-secondary);
+  line-height: 1.55;
 }
 
 /* ===== CTA BAND ===== */

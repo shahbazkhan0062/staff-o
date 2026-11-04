@@ -90,44 +90,8 @@ Book verified security staff for apartments, gated communities and strata proper
                   </div>
                 </div>
                 <p className="stf-intent-note">
-                  You review every application and choose who to hire Staffoo doesn't employ or supply security staff. <a href="#">Hiring for a business or agency?</a>
+                  Qualified applicants are matched to your job automatically.
                 </p>
-
-                <div className="stf-trust-row">
-                  <div className="stf-trust-item">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0A7C6E" strokeWidth="2">
-                      <path d="M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                    Licenses verified before anyone applies
-                  </div>
-                  <div className="stf-trust-item">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0A7C6E" strokeWidth="2">
-                      <path d="M12 2v20M17 6H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"></path>
-                    </svg>
-                    Pay after the shift is signed off
-                  </div>
-                  <div className="stf-trust-item">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0A7C6E" strokeWidth="2">
-                      <path d="M5 12h14M13 6l6 6-6 6"></path>
-                    </svg>
-                    No lock in contract
-                  </div>
-                </div>
-
-                <div className="stf-proof">
-                  <div className="stf-avatars"><i></i><i></i><i></i><i></i></div>
-                  <p className="stf-proof-text">
-                    <b>980+ estates, strata groups and homeowners</b> have hired through Staffoo · 4.9 star average staff rating
-                  </p>
-                </div>
-
-                <div className="stf-popular">
-                  Popular:
-                  <a >Gated communities</a>
-                  <a >Mobile patrol</a>
-                  <a >Vacant property checks</a>
-                  <a >Strata and body corporate</a>
-                </div>
               </div>
             )}
 
@@ -193,21 +157,6 @@ Book verified security staff for apartments, gated communities and strata proper
                     </svg>
                     No subscription fees
                   </div>
-                </div>
-
-                <div className="stf-proof">
-                  <div className="stf-avatars"><i></i><i></i><i></i><i></i></div>
-                  <p className="stf-proof-text">
-                    <b>1,100+ licensed security staff</b> find residential work through Staffoo. New jobs posted daily.
-                  </p>
-                </div>
-
-                <div className="stf-popular">
-                  Popular:
-                  <a href="#">Gatehouse shifts</a>
-                  <a href="#">Mobile patrol</a>
-                  <a href="#">Overnight cover</a>
-                  <a href="#">Vacant property checks</a>
                 </div>
               </div>
             )}

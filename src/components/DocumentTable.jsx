@@ -391,6 +391,15 @@ const STATE_CONTRACTOR_DOC_TEMPLATES = [
   { document_name: "Labour Hire", document_type: "labour_hire" },
 ];
 
+// Labour Hire is not required for NSW, WA, NT or Tas resource partners —
+// it should still be templated as a required/expected document for every
+// other state (VIC, QLD, SA, ACT).
+const LABOUR_HIRE_EXCLUDED_CATEGORIES = ["nsw_document", "wa_document", "nt_document", "tas_document"];
+const stateDocTemplatesFor = (category) =>
+  category && LABOUR_HIRE_EXCLUDED_CATEGORIES.includes(category)
+    ? STATE_CONTRACTOR_DOC_TEMPLATES.filter((tmpl) => tmpl.document_type !== "labour_hire")
+    : STATE_CONTRACTOR_DOC_TEMPLATES;
+
 
 const normalizeKey = (str) => {
   if (!str) return "";
@@ -538,8 +547,9 @@ export default function DocumentTable({ documents, onAddFile, userType, showDocE
       const catDocs = (byCategory[cat] || []).filter(
         (d) => !COMMON_CONTRACTOR_DOC_TEMPLATES.some((tmpl) => matchDoc(tmpl, d))
       );
+      const applicableTemplates = stateDocTemplatesFor(cat);
       const usedIds = new Set();
-      const mergedCatDocs = STATE_CONTRACTOR_DOC_TEMPLATES.map((tmpl) => {
+      const mergedCatDocs = applicableTemplates.map((tmpl) => {
         const found = catDocs.find(
           (d) => !usedIds.has(d.id || d) && matchDoc(tmpl, d)
         );
@@ -567,7 +577,7 @@ export default function DocumentTable({ documents, onAddFile, userType, showDocE
       const extraCatDocs = catDocs.filter(
         (d) =>
           !usedIds.has(d.id || d) &&
-          !STATE_CONTRACTOR_DOC_TEMPLATES.some((tmpl) => matchDoc(tmpl, d)) &&
+          !applicableTemplates.some((tmpl) => matchDoc(tmpl, d)) &&
           (d.document_type || d.document_name)
       );
 

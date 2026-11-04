@@ -640,9 +640,9 @@ export default function AboutUs() {
                   <i />
                   <i />
                 </div>
-                <p className="proof-text">
+                {/* <p className="proof-text">
                   <b>3,100+ licensed security staff</b> and a growing number of Australian businesses use Staffoo every week
-                </p>
+                </p> */}
               </div>
             </div>
           </div>

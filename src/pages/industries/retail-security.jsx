@@ -21,7 +21,7 @@ export default function RetailSecurity() {
     // 1. Stats Band Data
     const retailStats = [
         { value: "150+", label: "licensed retail security staff" },
-        { value: "4.8★", label: "average staff rating" },
+        { value: "4.9★", label: "average staff rating" },
         { value: "1 hr", label: "median time to first applicant" },
         { value: "510", label: "retail shifts filled this month" },
     ];

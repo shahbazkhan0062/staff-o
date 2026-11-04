@@ -218,10 +218,11 @@ export default function StaffTerms() {
                       2.1 Independence and Direct Engagement
                     </h4>
                     <p className="terms-paragraph">
-                      Accessing the Staffoo app does not create an employment or contractor relationship between the
-                      User and Capital Services Pty Ltd, unless the User is operating in a jurisdiction where Capital
-                      Services Pty Ltd acts as the licensed Principal Contractor and has executed a direct employment
-                      contract with the User.
+                       Accessing the Staffoo app does not create an employment, agency, or contractor
+                        relationship between the User and Capital Services Pty Ltd. The User&apos;s
+                        employer is their respective Resource Partner, who is solely responsible for
+                        payroll, superannuation, entitlements, and workers&apos; compensation under the
+                        Fair Work Act 2009 (Cth).
                     </p>
                   </div>
 
@@ -233,6 +234,17 @@ export default function StaffTerms() {
                       In all other instances, the User is employed or engaged exclusively by their respective
                       Resource Partner (subcontractor agency), who remains solely responsible for payroll,
                       entitlements, and workers&apos; compensation under the <em>Fair Work Act 2009 (Cth)</em>.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="terms-subheading">2.3 No Instant Pay and No Visa or Legal Advice</h4>
+                    <p className="terms-paragraph">
+                      Staffoo does not process payroll and does not provide instant payment. Payment
+                      for shifts is made by the User&apos;s Resource Partner in accordance with the
+                      Security Services Industry Award 2020 [MA000016] and the User&apos;s engagement
+                      terms. Staffoo does not provide advice on visa conditions, student visa work-hour
+                      limits, migration matters, or employment law. Users must obtain independent advice.
                     </p>
                   </div>
                 </div>
@@ -271,6 +283,15 @@ export default function StaffTerms() {
                     </h4>
                     <p className="terms-paragraph">
                       Users must use the platform and conduct themselves on-site responsibly, professionally, and in full compliance with the private security code of conduct applicable in their state or territory.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="terms-subheading">3.3 Shift Punctuality — 15-Minute Early Arrival</h4>
+                    <p className="terms-paragraph">
+                      Users must arrive on site at least fifteen (15) minutes before the scheduled
+                      shift start for handover, briefing, and clock-in. Late arrival may result in the
+                      shift being reallocated and may affect the User&apos;s standing on the platform.
                     </p>
                   </div>
                 </div>
@@ -350,6 +371,16 @@ export default function StaffTerms() {
                       <li>Failure to follow proper site instructions, Standard Operating Procedures (SOPs), or Workplace Health and Safety (WHS) guidelines.</li>
                       <li>Negligent performance of duties, abandoning a security post, or arriving on-site out of uniform.</li>
                     </ul>
+                  </div>
+
+                  <div>
+                    <h4 className="terms-subheading">5.3 Privacy and Related Policies</h4>
+                    <p className="terms-paragraph">
+                      Staffoo handles personal information (including GPS location during shifts) in
+                      accordance with its Privacy Policy. Users acknowledge that the Resource Partner
+                      Terms and their engagement contract with the Resource Partner govern the
+                      employment relationship, and that these App User Terms govern platform use only.
+                    </p>
                   </div>
                 </div>
               </article>

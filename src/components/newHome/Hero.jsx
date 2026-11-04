@@ -57,7 +57,7 @@ function Hero() {
           {/* Description */}
           <p className="nh-hero-desc">
             {activeTab === 'client'
-              ? "Post a job and independent, licensed staff apply. Whether you're hiring one staff for a weekend or covering security across a whole business, review, hire and pay all in one place."
+              ? "Automated matching. Staffoo assigns your shift to the highest rated licensed provider available in your area, so you are covered fast, without reviewing a list of applicants."
               : "Create your verified profile, upload your licenses, and get matched to security jobs near you. Apply in one tap — no phone tag, no waiting on a callback."}
           </p>
 
@@ -170,7 +170,7 @@ function Hero() {
               <span className="nh-chip">Event Security</span>
             </div>
 
-            <div className="nh-duty-stats">
+            {/* <div className="nh-duty-stats">
               <div className="nh-duty-stat">
                 <b>4.9★</b>
                 <span>142 jobs</span>
@@ -183,7 +183,7 @@ function Hero() {
                 <b>&lt;2hr</b>
                 <span>response time</span>
               </div>
-            </div>
+            </div> */}
           </div>
 
           {/* Floating "filled" badge */}

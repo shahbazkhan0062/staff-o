@@ -17,8 +17,8 @@ function HowItWorks() {
           </div>
           <div className="nh-step">
             <div className="nh-step-num">02</div>
-            <h3>Review applicants</h3>
-            <p>See verified staff ranked by rating, distance and rate.</p>
+            <h3>Automated Matching</h3>
+            <p>Staffoo assigns your shift to the highest-rated licensed security provider in your area.</p>
           </div>
           <div className="nh-step">
             <div className="nh-step-num">03</div>

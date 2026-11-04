@@ -259,6 +259,19 @@ export default function ResourcePartnerTerms() {
                       The Resource Partner warrants strict compliance with the <em>Security Services Industry Award 2020 [MA000016]</em>, the <em>Fair Work Act 2009 (Cth)</em>, Superannuation Guarantee laws, and state Workers&apos; Compensation laws. This includes paying mandatory minimum hourly rates, penalty rates, and enforcing fatigue limits (including mandatory minimum 8-to-10 hour breaks between shifts).
                     </p>
                   </div>
+
+                  <div>
+                    <h4 className="terms-subheading">3.3 Indemnity</h4>
+                    <p className="terms-paragraph">
+                      The Resource Partner indemnifies and holds harmless Capital Services Pty Ltd
+                      against all claims, losses, fines, penalties, and legal costs arising from:
+                      (a) any breach of the Fair Work Act 2009 (Cth), the Security Services Industry
+                      Award 2020 [MA000016], superannuation, or workers&apos; compensation laws by the
+                      Resource Partner; (b) any act, omission, negligence, or misconduct of the
+                      Resource Partner&apos;s personnel; or (c) any misrepresentation of licensing,
+                      VEVO, or insurance status.
+                    </p>
+                  </div>
                 </div>
               </article>
 
@@ -291,6 +304,24 @@ export default function ResourcePartnerTerms() {
                       The Resource Partner expressly authorizes Staffoo to deduct, withhold, or set off the amount of any client payment deductions or loss claims directly from current or future funds held in the Resource Partner&apos;s Stripe account or pending payout ledger.
                     </p>
                   </div>
+
+                  <div>
+                    <h4 className="terms-subheading">4.3 Non-Circumvention</h4>
+                    <p className="terms-paragraph">
+                      The Resource Partner shall not, during this Agreement and for six (6) months
+                      after its termination, directly solicit or contract with any Client introduced
+                      via Staffoo outside the Platform, without Staffoo&apos;s prior written consent.
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="terms-subheading">4.4 Suspension and Termination</h4>
+                    <p className="terms-paragraph">
+                      Staffoo may immediately suspend or terminate a Resource Partner&apos;s marketplace
+                      access for expired licenses, failed VEVO verification, insurance lapse, repeated
+                      client deductions, falsified credentials, or unauthorised sub-subcontracting.
+                      Pending payouts may be withheld pending investigation and set-off under §4.2.
+                    </p>
+                  </div>
                 </div>
               </article>
 
@@ -320,7 +351,11 @@ export default function ResourcePartnerTerms() {
                       5.2 Automated Stripe Payout Deductions
                     </h4>
                     <p className="terms-paragraph">
-                      The Resource Partner authorizes Staffoo and its payment gateway provider (Stripe) to automatically deduct the Platform Service Fee from captured client funds upon job completion before remitting the net balance to the Resource Partner&apos;s bank account.
+                      The Resource Partner authorises Staffoo and its payment gateway provider (Stripe)
+                      to automatically deduct the Platform Service Fee from captured client funds upon
+                      job completion before remitting the net balance to the Resource Partner&apos;s bank
+                      account. Staffoo collects and remits client funds as the Resource Partner&apos;s
+                      limited payment collection agent for Stripe purposes.    
                     </p>
                   </div>
                 </div>

@@ -502,7 +502,7 @@ function Footer() {
         </div>
 
         <div className="nh-foot-bottom">
-          <span>© 2026 STAFFOO PTY LTD · ABN 48 613 317 838 · All rights reserved.</span>
+          <span>© 2026 Capital Services Pty Ltd trading as Staffoo. ABN 48 613 317 838.</span>
           <span>
             <Link to="/privacy-policy" style={{ color: '#AAB3AE', textDecoration: 'none', marginRight: '16px' }}>Privacy</Link>
             <Link to="/terms-of-use" style={{ color: '#AAB3AE', textDecoration: 'none', marginRight: '16px' }}>Terms</Link>
