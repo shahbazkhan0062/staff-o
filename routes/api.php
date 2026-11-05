@@ -424,6 +424,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('admin-tasks', [AdminTaskController::class, 'index']);
         Route::get('admin-tasks/pending-for-dashboard', [AdminTaskController::class, 'pendingDashboard']);
         Route::post('admin-tasks', [AdminTaskController::class, 'store']);
+        Route::get('admin-tasks/{id}', [AdminTaskController::class, 'show']);
+        Route::put('admin-tasks/{id}', [AdminTaskController::class, 'update']);
+        Route::delete('admin-tasks/{id}', [AdminTaskController::class, 'destroy']);
         Route::patch('admin-tasks/{id}/status', [AdminTaskController::class, 'updateStatus']);
     });
 
