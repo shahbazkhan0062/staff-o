@@ -77,6 +77,7 @@ return [
         // NEW — the shared secret the lookup endpoints require.
         // Generate with:  php -r "echo bin2hex(random_bytes(32));"
         'function_secret'      => env('RETELL_FUNCTION_SECRET'),
+        'whatsapp_enabled' => env('WHATSAPP_AI_SUPPORT_ENABLED', true),
     ],
 
     // NEW — WhatsApp notification system (account/job/payment events +

@@ -58,6 +58,11 @@ class WhatsappWebhookController extends Controller
 
     protected function process(Request $request): void
     {
+
+        if (!config('services.retell.whatsapp_enabled', true)) {
+            Log::info('[WhatsApp] AI support disabled, message ignored', ['from' => $request->input('From')]);
+            return;
+        }
         // Twilio sends 'whatsapp:+61493899403'
         $from = (string) $request->input('From', '');
         $body = trim((string) $request->input('Body', ''));
