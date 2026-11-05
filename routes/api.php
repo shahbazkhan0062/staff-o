@@ -35,6 +35,7 @@ use App\Http\Controllers\Api\RetellFunctionController;
 use App\Http\Controllers\Api\RetellIdentityController;
 use App\Http\Controllers\Api\RetellAccountController;
 use App\Http\Controllers\Api\Admin\NotificationSettingsController;
+use App\Http\Controllers\Api\Admin\AdminTaskController;
 
 /*
 |--------------------------------------------------------------------------
@@ -416,6 +417,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('business-file/list', [GeneralController::class, 'getAllBusinessfile']);
         Route::get('business-file/{id}', [GeneralController::class, 'getSpecificBusinessfile']);
         Route::post('business-file/delete', [GeneralController::class, 'deleteBusinessFile']);
+
+        // NEW — Admin-to-admin task assignment (pending/completed status,
+        // assign/complete emails, dashboard widget feed). See
+        // App\Http\Controllers\Api\Admin\AdminTaskController.
+        Route::get('admin-tasks', [AdminTaskController::class, 'index']);
+        Route::get('admin-tasks/pending-for-dashboard', [AdminTaskController::class, 'pendingDashboard']);
+        Route::post('admin-tasks', [AdminTaskController::class, 'store']);
+        Route::patch('admin-tasks/{id}/status', [AdminTaskController::class, 'updateStatus']);
     });
 
     Route::prefix('payment')->group(function () {

@@ -36,6 +36,10 @@ class Kernel extends ConsoleKernel
              ->dailyAt('09:00')
              ->withoutOverlapping()
              ->onOneServer();
+        $schedule->command('admin-tasks:send-reminders')
+            ->dailyAt('09:30')
+            ->withoutOverlapping()
+            ->onOneServer();
         // $schedule->command('app:sync-public-holidays')->twiceYearly(1, 1);
         //  $schedule->command('app:assign-daily-inductions')
         //     ->dailyAt('07:00')
