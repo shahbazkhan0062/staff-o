@@ -237,7 +237,7 @@ export default function Login() {
                 border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden",
                 background: "#fff",
               }}>
-                {[["2,000+", "jobs filled"], ["1,200+", "verified staff"], ["4.8★", "avg. rating"]].map(([val, lbl], i) => (
+                {/* {[["2,000+", "jobs filled"], ["1,200+", "verified staff"], ["4.8★", "avg. rating"]].map(([val, lbl], i) => (
                   <div key={lbl} style={{
                     flex: 1, padding: "18px 0", textAlign: "center",
                     borderLeft: i > 0 ? `1px solid ${BORDER}` : "none",
@@ -245,7 +245,7 @@ export default function Login() {
                     <div style={{ fontFamily: "'Barlow Semi Condensed', sans-serif", fontSize: "22px", fontWeight: 700, color: G_DARK }}>{val}</div>
                     <div style={{ fontSize: "11.5px", color: TEXT_SEC, marginTop: "2px" }}>{lbl}</div>
                   </div>
-                ))}
+                ))} */}
               </div>
             </div>
 

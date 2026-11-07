@@ -4,6 +4,7 @@ import StatsCard from "../../components/dashboard/StatsCard";
 import UserBreakdownChart from "../../components/dashboard/UserBreakdownChart";
 import RevenueChart from "../../components/dashboard/RevenueChart";
 import JobTrendChart from "../../components/dashboard/JobTrendChart";
+import PendingTasksWidget from "../../components/dashboard/PendingTasksWidget";
 import useFetch from "../../hooks/useFetch";
 import Loader from "../../components/Loader";
 import { Link } from "react-router-dom";
@@ -185,6 +186,9 @@ export default function AdminDashboard() {
           />
         </div>
       </section>
+
+      {/* Pending admin-to-admin tasks */}
+      <PendingTasksWidget />
 
       {/* Charts Section */}
       <section className="dashboard-charts">

@@ -48,6 +48,7 @@ const Invoice = lazy(() => import("./pages/Invoice"));
 const AddJob = lazy(() => import("./pages/add-job"));
 const ManageUsers = lazy(() => import("./pages/manage-users"));
 const ManageStaff = lazy(() => import("./pages/manage-staff"));
+const AdminTasks = lazy(() => import("./pages/AdminTasks"));
 const ChatPage = lazy(() => import("./pages/Chat"));
 const ChatRoom = lazy(() => import("./pages/ChatRoom"));
 const AllNotifications = lazy(() => import("./pages/AllNotifications"));
@@ -659,6 +660,7 @@ function AppContent() {
                     <Route path="/manage-users" element={<ProtectedRoute allowedRoles={["admin"]}><ManageUsers /></ProtectedRoute>} />
                     <Route path="/partner-contracts" element={<ProtectedRoute allowedRoles={["admin"]}><PartnerContracts /></ProtectedRoute>} />
                     <Route path="/manage-staff" element={<ProtectedRoute allowedRoles={["admin", "contractor"]}><ManageStaff /></ProtectedRoute>} />
+                    <Route path="/admin-tasks" element={<ProtectedRoute allowedRoles={["admin"]}><AdminTasks /></ProtectedRoute>} />
                     <Route path="/cover-jobs" element={<ProtectedRoute allowedRoles={['contractor', ...(isStaffCoverJobsVisible ? ['staff'] : [])]}><CoverJobs /></ProtectedRoute>} />
                     <Route path="/payment-history" element={<PaymentHistory />} />
                     <Route path="/pay-charge-rate" element={<PayChargeRate />} />

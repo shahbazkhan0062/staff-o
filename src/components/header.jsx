@@ -20,6 +20,8 @@ const Header = memo(function Header({ withSidebar = false }) {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const userId = userdata?.id || userdata?.data?.id;
+  const userType = (userdata?.data?.user_type || userdata?.user_type || "").toLowerCase();
+  const isAdmin = userType === "admin";
 
   const notificationsEndpoint = useMemo(
     () => (userId ? `api/notifications/user/${userId}` : null),
@@ -28,6 +30,7 @@ const Header = memo(function Header({ withSidebar = false }) {
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showTasks, setShowTasks] = useState(false);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1200);
 
   const { submit } = useSubmit({ isAuth: true });
@@ -50,9 +53,19 @@ const Header = memo(function Header({ withSidebar = false }) {
     }
   }, [dispatch, notificationsData]);
 
+  // Admins only: pending admin-to-admin tasks assigned to them, for the
+  // header's Tasks bell (between the notification bell and the user menu).
+  const { data: tasksData, refetch: refetchTasks } = useFetch(
+    "api/admin/admin-tasks/pending-for-dashboard",
+    { isAuth: true, immediate: isAdmin },
+  );
+  const pendingTasks = tasksData?.data?.tasks || [];
+  const pendingTaskCount = tasksData?.data?.pending_count || 0;
+
   // Close dropdowns on outside click
   const notifRef = useRef(null);
   const userMenuRef = useRef(null);
+  const tasksRef = useRef(null);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -61,6 +74,9 @@ const Header = memo(function Header({ withSidebar = false }) {
       }
       if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
         setShowUserMenu(false);
+      }
+      if (tasksRef.current && !tasksRef.current.contains(event.target)) {
+        setShowTasks(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -130,11 +146,28 @@ const Header = memo(function Header({ withSidebar = false }) {
   const toggleNotifications = () => {
     setShowNotifications((prev) => !prev);
     setShowUserMenu(false);
+    setShowTasks(false);
   };
 
   const toggleUserMenu = () => {
     setShowUserMenu((prev) => !prev);
     setShowNotifications(false);
+    setShowTasks(false);
+  };
+
+  const toggleTasks = () => {
+    setShowTasks((prev) => {
+      const next = !prev;
+      if (next) refetchTasks();
+      return next;
+    });
+    setShowNotifications(false);
+    setShowUserMenu(false);
+  };
+
+  const openTask = (taskId) => {
+    setShowTasks(false);
+    navigate(`/admin-tasks?task=${taskId}`);
   };
 
   const handleLogoutClick = async () => {
@@ -217,6 +250,54 @@ const Header = memo(function Header({ withSidebar = false }) {
                     </div>
                   )}
                 </div>
+
+                {/* Admin Tasks bell — admin-to-admin tasks still pending for me */}
+                {isAdmin && (
+                  <div className="hdr-notif-wrap" ref={tasksRef}>
+                    <button
+                      className="hdr-bell-btn"
+                      onClick={toggleTasks}
+                      aria-label="Toggle pending tasks"
+                    >
+                      <i className="fa-solid fa-list-check"></i>
+                      {pendingTaskCount > 0 && <span className="hdr-bell-badge">{pendingTaskCount}</span>}
+                    </button>
+
+                    {showTasks && (
+                      <div className="hdr-panel hdr-notif-panel">
+                        <div className="hdr-panel-head">
+                          <i className="fa-solid fa-list-check"></i> Pending Tasks
+                        </div>
+                        <ul className="hdr-notif-list">
+                          {pendingTasks.length > 0 ? (
+                            pendingTasks.map((task) => (
+                              <li
+                                key={task.id}
+                                className="hdr-notif-item"
+                                onClick={() => openTask(task.id)}
+                              >
+                                <span className="hdr-notif-dot"></span>
+                                <div className="hdr-notif-text">
+                                  <div className="hdr-notif-title">{task.title}</div>
+                                  <div className="hdr-notif-msg">
+                                    Assigned by {task.assigned_by?.name || "N/A"}
+                                  </div>
+                                </div>
+                              </li>
+                            ))
+                          ) : (
+                            <li className="hdr-notif-empty">No pending tasks</li>
+                          )}
+                        </ul>
+                        <div className="hdr-panel-foot">
+                          <NavLink to="/admin-tasks" onClick={() => setShowTasks(false)}>
+                            View All Tasks
+                          </NavLink>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* User Menu */}
                 <div className="hdr-user-wrap" ref={userMenuRef}>

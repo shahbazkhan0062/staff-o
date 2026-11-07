@@ -228,6 +228,7 @@ const Sidebar = memo(function Sidebar() {
     { to: "/roster", icon: "fa-solid fa-calendar-days", label: "Roster" },
     { to: "/add-job", icon: "fa-solid fa-file-circle-plus", label: "Post a Job" },
     { to: "/manage-users", icon: "fa-solid fa-users-gear", label: "Manage Users" },
+    { to: "/admin-tasks", icon: "fa-solid fa-user-clock", label: "Admin Tasks" },
     { to: "/wfm-tools", icon: "fa-solid fa-toolbox", label: "WFM Tools" },
     { to: "/reports", icon: "fa-solid fa-chart-pie", label: "Reports Management" },
     { to: "/chat", icon: "fa-solid fa-headset", label: "Support & Chat" },
