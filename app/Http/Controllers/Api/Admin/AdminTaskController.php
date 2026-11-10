@@ -43,6 +43,8 @@ class AdminTaskController extends Controller
         $box = $request->query('box', 'assigned_to_me');
 
         $query = AdminTask::with(['assignedBy:id,name,email', 'assignedTo:id,name,email'])
+            ->withCount('comments')
+            ->withMax('comments', 'created_at')
             ->orderByDesc('created_at');
 
         if ($box === 'assigned_by_me') {
@@ -59,9 +61,15 @@ class AdminTaskController extends Controller
             $query->where('status', $request->query('status'));
         }
 
+        // has_new_comment: the newest comment on the task was posted after
+        // this admin last opened it (or they've never opened it at all).
+        $tasks = $query->get()->each(function ($task) use ($admin) {
+            $task->has_new_comment = $task->hasNewCommentFor((int) $admin->id);
+        });
+
         return response()->json([
             'success' => true,
-            'data'    => $query->get(),
+            'data'    => $tasks,
         ]);
     }
 
@@ -85,6 +93,9 @@ class AdminTaskController extends Controller
         if ((int) $admin->id !== (int) $task->assigned_to && (int) $admin->id !== (int) $task->assigned_by) {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
+
+        $task->markViewedBy((int) $admin->id);
+        $task->has_new_comment = false;
 
         return response()->json(['success' => true, 'data' => $task]);
     }
@@ -141,6 +152,10 @@ class AdminTaskController extends Controller
 
         $comment->setRelation('task', $task);
         $comment->setRelation('commentedBy', $admin);
+
+        // Posting a comment counts as having seen the task up to now, so the
+        // commenter doesn't see their own comment flagged as "new".
+        $task->markViewedBy((int) $admin->id);
 
         // Notify whichever of the two admins didn't write the comment.
         $otherPartyId = (int) $admin->id === (int) $task->assigned_to
