@@ -428,6 +428,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('admin-tasks/{id}', [AdminTaskController::class, 'update']);
         Route::delete('admin-tasks/{id}', [AdminTaskController::class, 'destroy']);
         Route::patch('admin-tasks/{id}/status', [AdminTaskController::class, 'updateStatus']);
+        Route::get('admin-tasks/{id}/comments', [AdminTaskController::class, 'comments']);
+        Route::post('admin-tasks/{id}/comments', [AdminTaskController::class, 'storeComment']);
     });
 
     Route::prefix('payment')->group(function () {

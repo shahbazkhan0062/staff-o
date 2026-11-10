@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Events\DynamicUserNotification;
 use App\Http\Controllers\Controller;
 use App\Mail\AdminTaskAssignedMail;
+use App\Mail\AdminTaskCommentMail;
 use App\Mail\AdminTaskCompletedMail;
 use App\Models\AdminTask;
+use App\Models\AdminTaskComment;
 use App\Models\Notification;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -74,13 +76,101 @@ class AdminTaskController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 
-        $task = AdminTask::with(['assignedBy:id,name,email', 'assignedTo:id,name,email'])->findOrFail($id);
+        $task = AdminTask::with([
+            'assignedBy:id,name,email',
+            'assignedTo:id,name,email',
+            'comments.commentedBy:id,name,email',
+        ])->findOrFail($id);
 
         if ((int) $admin->id !== (int) $task->assigned_to && (int) $admin->id !== (int) $task->assigned_by) {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 
         return response()->json(['success' => true, 'data' => $task]);
+    }
+
+    /**
+     * List comments on a task (both admins involved can view).
+     */
+    public function comments(Request $request, $id)
+    {
+        $admin = $request->user();
+
+        if (!$admin || $admin->user_type !== 'admin') {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $task = AdminTask::findOrFail($id);
+
+        if ((int) $admin->id !== (int) $task->assigned_to && (int) $admin->id !== (int) $task->assigned_by) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $comments = $task->comments()->with('commentedBy:id,name,email')->get();
+
+        return response()->json(['success' => true, 'data' => $comments]);
+    }
+
+    /**
+     * Add a comment to a task. Either admin involved (assigner or assignee)
+     * can comment; the other one gets an email + in-app notification.
+     */
+    public function storeComment(Request $request, $id)
+    {
+        $admin = $request->user();
+
+        if (!$admin || $admin->user_type !== 'admin') {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $task = AdminTask::with(['assignedBy:id,name,email', 'assignedTo:id,name,email'])->findOrFail($id);
+
+        if ((int) $admin->id !== (int) $task->assigned_to && (int) $admin->id !== (int) $task->assigned_by) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $data = $request->validate([
+            'comment' => 'required|string|max:2000',
+        ]);
+
+        $comment = AdminTaskComment::create([
+            'admin_task_id' => $task->id,
+            'commented_by'  => $admin->id,
+            'comment'       => $data['comment'],
+        ]);
+
+        $comment->setRelation('task', $task);
+        $comment->setRelation('commentedBy', $admin);
+
+        // Notify whichever of the two admins didn't write the comment.
+        $otherPartyId = (int) $admin->id === (int) $task->assigned_to
+            ? (int) $task->assigned_by
+            : (int) $task->assigned_to;
+
+        $otherParty = (int) $otherPartyId === (int) $task->assigned_by
+            ? $task->assignedBy
+            : $task->assignedTo;
+
+        if ($otherParty) {
+            try {
+                Mail::to($otherParty->email)->send(new AdminTaskCommentMail($comment));
+            } catch (\Exception $e) {
+                Log::error('AdminTaskCommentMail failed', ['task_id' => $task->id, 'error' => $e->getMessage()]);
+            }
+
+            $this->notifyAdmin(
+                $otherPartyId,
+                'New Comment On Task',
+                $admin->name . ' commented on: ' . $task->title,
+                ['admin_task_id' => $task->id, 'comment_id' => $comment->id],
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Comment added.',
+            'data'    => $comment,
+        ], 201);
     }
 
     /**

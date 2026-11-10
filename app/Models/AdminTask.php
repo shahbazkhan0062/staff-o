@@ -34,6 +34,11 @@ class AdminTask extends Model
         return $this->belongsTo(User::class, 'assigned_to');
     }
 
+    public function comments()
+    {
+        return $this->hasMany(AdminTaskComment::class, 'admin_task_id')->orderBy('created_at');
+    }
+
     public function scopePending($query)
     {
         return $query->where('status', 'pending');
