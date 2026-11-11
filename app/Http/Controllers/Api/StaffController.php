@@ -2115,13 +2115,54 @@ public function updateGuardDocuments(Request $request)
             }
         } catch (\Exception $e) {
             return response()->json([
-                'success' => false, 
+                'success' => false,
                 'message' => 'Error: ' . $e->getMessage()
             ]);
         }
     }
 
-    
+    /**
+     * Streams a previously uploaded staff document (e.g. a signature-pad
+     * image) back to an authenticated caller with the app's own CORS headers.
+     *
+     * These files are normally served as plain static assets straight from
+     * the public folder, which means the browser blocks reading their pixel
+     * data cross-origin (no CORS headers) when the frontend tries to embed
+     * one into a generated PDF. Routing the same file through this
+     * authenticated API endpoint lets the existing CORS middleware apply,
+     * so the frontend can fetch it, convert it to a data URL, and embed it.
+     */
+    public function staffDocumentProxy(Request $request)
+    {
+        $request->validate([
+            'path' => 'required|string',
+        ]);
+
+        $path = trim($request->query('path'));
+
+        // Accept either a full URL (http(s)://host/staff_documents/x.png)
+        // or an already-relative path (staff_documents/x.png).
+        $parsed = parse_url($path);
+        $relative = $parsed['path'] ?? $path;
+        $relative = ltrim($relative, '/');
+
+        // Guard against path traversal outside the public directory.
+        $relative = str_replace(['..\\', '../', '..'], '', $relative);
+
+        if ($relative === '') {
+            return response()->json(['success' => false, 'message' => 'Invalid path'], 422);
+        }
+
+        $fullPath = public_path($relative);
+
+        if (!is_file($fullPath)) {
+            return response()->json(['success' => false, 'message' => 'File not found'], 404);
+        }
+
+        return response()->file($fullPath);
+    }
+
+
     public function getFormData(Request $request)
     {
         $request->validate([

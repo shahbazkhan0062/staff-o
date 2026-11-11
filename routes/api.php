@@ -231,6 +231,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::any('upload-file', [StaffController::class, 'uploadFile'])->name('upload.file');
     Route::any('upload-staff-file', [StaffController::class, 'uploadStaffFile']);
     Route::any('/form-data', [StaffController::class, 'getFormData']);
+    Route::get('/staff-document-proxy', [StaffController::class, 'staffDocumentProxy']);
     
     Route::get('/dashboard', [DashboardController::class, 'index']);
 
