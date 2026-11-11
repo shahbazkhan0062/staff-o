@@ -294,7 +294,7 @@ export default function WhyStaffoo() {
               </div>
               <div className="feature-row">
                 <dt>Paid every fortnight</dt>
-                <dd>A reliable pay cycle, in line with standard Australian pay periods.</dd>
+                <dd>Staffoo staff and resource partner are paid fortnightly, on a reliable pay cycle aligned with standard pay periods, at the agreed contracted rates.</dd>
               </div>
             </dl>
             <Link to={findJobRoute} className="btn">Browse open jobs</Link>

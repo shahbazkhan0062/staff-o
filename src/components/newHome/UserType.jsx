@@ -5,7 +5,7 @@ import "../../styles/staffoo.css"
 function UserType() {
   return (
     <div className="nh-platform-bar">
-      Post your job and Staffoo matches you with a verified, fully licensed security provider to fill it.
+      Post your job, and Staffoo matches you with a fully verified, licensed security Staff.
     </div>
   )
 }

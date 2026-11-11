@@ -207,6 +207,12 @@ const Header = memo(function Header({ withSidebar = false }) {
           <div className="hdr-right">
             {token && (
               <div className="hdr-actions">
+                {/* Go back to the public website */}
+                <NavLink to="/" className="hdr-site-link">
+                  <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                  Go to Website
+                </NavLink>
+
                 {/* Notification Bell */}
                 <div className="hdr-notif-wrap" ref={notifRef}>
                   <button
@@ -326,6 +332,13 @@ const Header = memo(function Header({ withSidebar = false }) {
               </div>
             )}
 
+            {/* Compact "Go to Website" button for small screens */}
+            {!isDesktop && token && (
+              <NavLink to="/" className="hdr-site-link-mobile" aria-label="Go to Website">
+                <i className="fa-solid fa-arrow-up-right-from-square"></i>
+              </NavLink>
+            )}
+
             {/* Mobile toggle */}
             {!isDesktop && withSidebar && (
               <button
@@ -380,7 +393,8 @@ const Header = memo(function Header({ withSidebar = false }) {
         }
 
         .hdr-left { flex: 0 0 auto; display: flex; align-items: center; }
-        .hdr-logo-link { display: flex; align-items: center; text-decoration: none; }
+        .hdr-logo-link { display: flex; align-items: center; text-decoration: none; transition: transform 0.15s; }
+        .hdr-logo-link:hover { transform: translateY(-1px); }
         .hdr-logo-img { height: 42px; display: block; }
 
         .hdr-center {
@@ -420,11 +434,41 @@ const Header = memo(function Header({ withSidebar = false }) {
           .hdr-nav-link.active::after { transform: scaleX(1); }
         }
 
-        .hdr-right { flex: 0 0 auto; display: flex; align-items: center; }
+        .hdr-right { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
         .hdr-actions { display: flex; align-items: center; gap: 18px; }
         @media (max-width: 1199px) {
           .hdr-actions { display: none; }
         }
+
+        /* "Go to Website" CTA — desktop. Flat solid style, matching the
+           "Go to Dashboard" button on the public site header exactly
+           (same color, padding, radius, no gradient/glow) so the two
+           headers read as one consistent design. */
+        .hdr-site-link {
+          display: flex; align-items: center; gap: 7px;
+          padding: 10px 16px; border-radius: 9px;
+          background: var(--hdr-teal);
+          color: #fff; font-weight: 600; font-size: 14px;
+          text-decoration: none; white-space: nowrap;
+          border: 1.5px solid var(--hdr-teal);
+          transition: background 0.15s, border-color 0.15s;
+        }
+        .hdr-site-link i { font-size: 12.5px; }
+        .hdr-site-link:hover {
+          color: #fff;
+          background: var(--hdr-teal-dark);
+          border-color: var(--hdr-teal-dark);
+        }
+
+        /* "Go to Website" — compact mobile icon button */
+        .hdr-site-link-mobile {
+          width: 38px; height: 38px; border-radius: 10px;
+          display: flex; align-items: center; justify-content: center;
+          background: var(--hdr-teal-tint); border: 1px solid var(--hdr-teal-border);
+          color: var(--hdr-teal); font-size: 14px; text-decoration: none;
+          transition: background 0.15s;
+        }
+        .hdr-site-link-mobile:hover { background: var(--hdr-teal-border); }
 
         /* Notification bell */
         .hdr-notif-wrap { position: relative; }

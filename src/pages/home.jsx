@@ -6,6 +6,7 @@ import UserType from "../components/newHome/UserType";
 import Ticker from "../components/newHome/Ticker";
 import Categories from "../components/newHome/Categories";
 import WhyStaffoo from "../components/newHome/WhyStaffoo";
+import OurLicences from "../components/newHome/OurLicences";
 import HowItWorks from "../components/newHome/HowItWorks";
 import Testamonial from "../components/newHome/Testamonial";
 import Demographics from "../components/newHome/Demographics";
@@ -31,6 +32,9 @@ export default function Home() {
 
       {/* "What you get" — dark split section */}
       <WhyStaffoo />
+
+      {/* Our Licences — TAS, NSW, VIC, QLD */}
+      <OurLicences />
 
       {/* How it works — 4 steps */}
       <HowItWorks />

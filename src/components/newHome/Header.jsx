@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { logOut } from '../../store/slices/authSlice'
 import useSubmit from '../../hooks/useSubmit'
 import staffologo from "../../assets/images/staffo.png"
@@ -11,7 +11,14 @@ function Header() {
   const { token, userdata } = useSelector((state) => state.auth)
   const dispatch = useDispatch()
   const navigate = useNavigate()
+  const location = useLocation()
   const userId = userdata?.id || userdata?.data?.id
+
+  // This header only renders on the public marketing site, so the
+  // smart CTA always offers to jump into the dashboard. It's written
+  // against the current path (rather than hard-coded) so it keeps
+  // working if this header is ever reused on an authenticated route.
+  const isOnDashboard = location.pathname.startsWith('/dashboard')
 
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
@@ -146,50 +153,39 @@ function Header() {
                   <NavLink to="/register" className="nh-btn nh-btn-solid">Sign up</NavLink>
                 </>
               ) : (
-                <div style={{ position: 'relative' }}>
-                  <div
-                    onClick={() => setShowUserMenu((p) => !p)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
-                      padding: '6px 12px', borderRadius: '8px', transition: 'background .2s',
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f0f0f0')}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <NavLink
+                    to={isOnDashboard ? '/' : '/dashboard'}
+                    onClick={handleLinkClick}
+                    className="nh-btn nh-btn-cta"
                   >
-                    {renderUserAvatar(36)}
-                    <span style={{ fontWeight: 600, fontSize: '14px', color: '#14181C' }}>{displayName}</span>
-                    <span className="nh-caret" style={{ borderColor: '#0a7c6e' }} />
-                  </div>
+                    <i className={`fa ${isOnDashboard ? 'fa-globe' : 'fa-th-large'}`} style={{ marginRight: '7px', fontSize: '12.5px' }} />
+                    {isOnDashboard ? 'Go to Website' : 'Go to Dashboard'}
+                  </NavLink>
 
-                  {showUserMenu && (
-                    <div style={{
-                      position: 'absolute', right: 0, top: '52px',
-                      background: 'white', border: '1px solid #E4E9E4', borderRadius: '12px',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: '210px', zIndex: 1000, overflow: 'hidden',
-                    }}>
-                      <NavLink to="/dashboard" onClick={() => setShowUserMenu(false)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', color: '#232A2E', textDecoration: 'none', borderBottom: '1px solid #E4E9E4', fontSize: '14px', transition: 'background .15s' }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = '#F5F8F5'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                      >
-                        <i className="fa fa-th-large" style={{ color: '#0a7c6e', width: '16px' }} /> Dashboard
-                      </NavLink>
-                      <NavLink to="/edit-profile" onClick={() => setShowUserMenu(false)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', color: '#232A2E', textDecoration: 'none', borderBottom: '1px solid #E4E9E4', fontSize: '14px', transition: 'background .15s' }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = '#F5F8F5'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                      >
-                        <i className="fa fa-user" style={{ color: '#0a7c6e', width: '16px' }} /> My Profile
-                      </NavLink>
-                      <button onClick={handleLogout}
-                        style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '12px 16px', color: '#e03535', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontSize: '14px', transition: 'background .15s' }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = '#FFF5F5' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-                      >
-                        <i className="fa fa-sign-out" style={{ width: '16px' }} /> Logout
-                      </button>
+                  <span className="nh-header-divider" />
+
+                  <div style={{ position: 'relative' }}>
+                    <div
+                      onClick={() => setShowUserMenu((p) => !p)}
+                      className="nh-user-trigger"
+                    >
+                      {renderUserAvatar(36)}
+                      <span style={{ fontWeight: 600, fontSize: '14px', color: '#14181C' }}>{displayName}</span>
+                      <span className="nh-caret" style={{ borderColor: '#0a7c6e' }} />
                     </div>
-                  )}
+
+                    {showUserMenu && (
+                      <div className="nh-user-dropdown">
+                        <NavLink to="/edit-profile" onClick={() => setShowUserMenu(false)} className="nh-user-dropdown-item">
+                          <i className="fa fa-user" /> My Profile
+                        </NavLink>
+                        <button onClick={handleLogout} className="nh-user-dropdown-item danger">
+                          <i className="fa fa-sign-out" /> Logout
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -228,9 +224,9 @@ function Header() {
               </div>
             </div>
 
-            {/* Dashboard button */}
+            {/* Smart Dashboard / Website button */}
             <NavLink
-              to="/dashboard"
+              to={isOnDashboard ? '/' : '/dashboard'}
               onClick={handleLinkClick}
               style={{
                 display: 'flex', alignItems: 'center', gap: '10px',
@@ -247,9 +243,9 @@ function Header() {
                 width: '30px', height: '30px', borderRadius: '50%',
                 background: '#E3F3EA', display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <i className="fa fa-th-large" style={{ color: '#0a7c6e', fontSize: '13px' }} />
+                <i className={`fa ${isOnDashboard ? 'fa-globe' : 'fa-th-large'}`} style={{ color: '#0a7c6e', fontSize: '13px' }} />
               </span>
-              Dashboard
+              {isOnDashboard ? 'Go to Website' : 'Go to Dashboard'}
               <i className="fa fa-chevron-right" style={{ marginLeft: 'auto', color: '#AAB3AE', fontSize: '11px' }} />
             </NavLink>
 

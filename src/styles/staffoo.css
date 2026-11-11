@@ -96,21 +96,32 @@ html { scroll-behavior: smooth; } */
   padding: 0 32px;
 }
 
+/* The header carries more controls (nav + CTA + account menu) than the
+   rest of the page content, so it gets a wider container to keep
+   everything on one line instead of wrapping. */
+.nh-header .nh-wrap {
+  max-width: 1360px;
+  padding: 0 24px;
+}
+
 /* ===== NEW HEADER ===== */
 .nh-header {
   position: sticky;
   top: 0;
   z-index: 200;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
   border-bottom: 1px solid var(--nh-border);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02), 0 8px 24px -16px rgba(10, 124, 110, 0.18);
 }
 
 .nh-nav {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  height: 66px;
+  justify-content: flex-start;
+  height: 70px;
+  gap: 20px;
 }
 
 .nh-logo {
@@ -122,6 +133,12 @@ html { scroll-behavior: smooth; } */
   gap: 8px;
   text-decoration: none;
   color: var(--nh-ink);
+  transition: transform .18s ease;
+  flex-shrink: 0;
+}
+
+.nh-logo:hover {
+  transform: translateY(-1px);
 }
 
 .nh-logo .nh-dot {
@@ -135,7 +152,8 @@ html { scroll-behavior: smooth; } */
 .nh-nav-links {
   display: flex;
   align-items: center;
-  gap: 32px;
+  gap: 26px;
+  margin-left: 48px;
 }
 
 .nh-nav-links>div {
@@ -143,19 +161,40 @@ html { scroll-behavior: smooth; } */
 }
 
 .nh-nav-item {
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 500;
   color: var(--nh-ink-soft);
   display: flex;
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  padding: 8px 0;
+  padding: 8px 2px;
   text-decoration: none;
+  position: relative;
+  white-space: nowrap;
+  transition: color .15s ease;
+}
+
+.nh-nav-item::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 2px;
+  height: 2px;
+  background: var(--nh-green);
+  border-radius: 2px;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform .2s ease;
 }
 
 .nh-nav-item:hover {
   color: var(--nh-green);
+}
+
+.nh-nav-item:hover::after {
+  transform: scaleX(1);
 }
 
 .nh-caret {
@@ -166,16 +205,22 @@ html { scroll-behavior: smooth; } */
   transform: rotate(45deg);
   margin-top: -3px;
   opacity: 0.7;
+  transition: transform .18s ease;
+}
+
+.nh-nav-links > div:hover .nh-caret {
+  transform: rotate(225deg);
+  margin-top: 3px;
 }
 
 .nh-dropdown {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 10px);
   left: -16px;
   background: var(--nh-white);
   border: 1px solid var(--nh-border);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(20, 24, 28, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px -8px rgba(20, 24, 28, 0.14);
   padding: 10px;
   min-width: 220px;
   opacity: 0;
@@ -209,28 +254,30 @@ html { scroll-behavior: smooth; } */
 .nh-nav-cta {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 /* Auth buttons (login/signup/profile) — hidden on mobile, visible on desktop */
 .nh-nav-cta-btns {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .nh-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 11px 22px;
+  padding: 10px 18px;
   border-radius: 9px;
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   border: 1.5px solid transparent;
   white-space: nowrap;
-  transition: all .15s ease;
+  transition: all .18s ease;
   text-decoration: none;
   font-family: 'Inter', sans-serif;
 }
@@ -245,6 +292,8 @@ html { scroll-behavior: smooth; } */
   background: var(--nh-green-dark);
   border-color: var(--nh-green-dark);
   color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px -6px rgba(10, 124, 110, 0.45);
 }
 
 .nh-btn-outline {
@@ -255,6 +304,7 @@ html { scroll-behavior: smooth; } */
 .nh-btn-outline:hover {
   border-color: var(--nh-green);
   color: var(--nh-green);
+  transform: translateY(-1px);
 }
 
 .nh-btn-ghost {
@@ -263,9 +313,108 @@ html { scroll-behavior: smooth; } */
   border-color: transparent;
 }
 
+.nh-btn-ghost:hover {
+  color: var(--nh-green);
+}
+
 .nh-btn-lg {
   padding: 15px 26px;
   font-size: 15.5px;
+}
+
+/* Smart "Go to Dashboard" / "Go to Website" button — same weight as the
+   other solid button so it doesn't compete visually with the rest of
+   the header */
+.nh-btn-cta {
+  background: var(--nh-green);
+  color: #fff;
+  border-color: var(--nh-green);
+  padding: 10px 16px;
+}
+
+.nh-btn-cta:hover {
+  background: var(--nh-green-dark);
+  border-color: var(--nh-green-dark);
+  color: #fff;
+}
+
+/* Thin divider between the dashboard CTA and the account menu */
+.nh-header-divider {
+  width: 1px;
+  height: 26px;
+  background: var(--nh-border);
+  flex-shrink: 0;
+}
+
+/* Avatar + name trigger for the account dropdown */
+.nh-user-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 5px 10px 5px 5px;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+  transition: background .18s ease, border-color .18s ease;
+}
+
+.nh-user-trigger:hover {
+  background: var(--nh-tint);
+  border-color: var(--nh-border);
+}
+
+.nh-user-dropdown {
+  position: absolute;
+  right: 0;
+  top: 54px;
+  background: var(--nh-white);
+  border: 1px solid var(--nh-border);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px -8px rgba(20, 24, 28, 0.16);
+  min-width: 190px;
+  z-index: 1000;
+  overflow: hidden;
+  padding: 6px;
+}
+
+.nh-user-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: #232A2E;
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background .15s ease;
+  font-family: 'Inter', sans-serif;
+}
+
+.nh-user-dropdown-item i {
+  color: var(--nh-green);
+  width: 16px;
+}
+
+.nh-user-dropdown-item:hover {
+  background: var(--nh-tint);
+}
+
+.nh-user-dropdown-item.danger {
+  color: #e03535;
+}
+
+.nh-user-dropdown-item.danger i {
+  color: #e03535;
+}
+
+.nh-user-dropdown-item.danger:hover {
+  background: #FFF5F5;
 }
 
 /* Mobile menu button (new header) */
@@ -276,7 +425,30 @@ html { scroll-behavior: smooth; } */
   cursor: pointer;
   color: var(--nh-ink);
   font-size: 20px;
-  padding: 4px;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background .15s ease;
+}
+
+.nh-mobile-btn:hover {
+  background: var(--nh-tint);
+}
+
+/* Switch the header itself to the hamburger menu a bit earlier than the
+   rest of the page's mobile breakpoint, so the nav links, CTA button
+   and account menu never fight each other for space and wrap. */
+@media (max-width: 1180px) {
+  .nh-nav-links {
+    display: none;
+  }
+
+  .nh-nav-cta-btns {
+    display: none;
+  }
+
+  .nh-mobile-btn {
+    display: block;
+  }
 }
 
 /* ===== PLATFORM BAR ===== */

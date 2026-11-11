@@ -38,6 +38,7 @@ export default function AdminTasks() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const { submit, loading: submitting } = useSubmit({ isAuth: true });
+  const { submit: submitComment, loading: commentSubmitting } = useSubmit({ isAuth: true });
 
   const [tab, setTab] = useState("assigned_to_me");
   const [statusFilter, setStatusFilter] = useState("");
@@ -56,6 +57,7 @@ export default function AdminTasks() {
   const [viewTask, setViewTask] = useState(null);
   const [viewLoading, setViewLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [newComment, setNewComment] = useState("");
 
   // Load the list of admins to assign tasks to.
   useEffect(() => {
@@ -98,6 +100,9 @@ export default function AdminTasks() {
       setViewLoading(false);
       if (res?.success) {
         setViewTask(res.data);
+        // The backend marks the task as viewed on this call, so clear the
+        // "new comment" flag on the matching row without a full refetch.
+        setTasks((prev) => prev.map((t) => (t.id === res.data.id ? { ...t, has_new_comment: false } : t)));
       } else {
         toast.error(res?.error || "Could not load that task.");
         setViewTask(null);
@@ -179,6 +184,22 @@ export default function AdminTasks() {
     }
   };
 
+  const handleAddComment = async () => {
+    if (!viewTask || !newComment.trim()) return;
+
+    const res = await submitComment(`api/admin/admin-tasks/${viewTask.id}/comments`, {
+      comment: newComment.trim(),
+    });
+
+    if (res?.success) {
+      setNewComment("");
+      setViewTask((t) => ({
+        ...t,
+        comments: [...(t.comments || []), res.data],
+      }));
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     const res = await submit(`api/admin/admin-tasks/${deleteTarget.id}`, null, { method: "DELETE" });
@@ -208,9 +229,13 @@ export default function AdminTasks() {
         .admin-tasks-table th { text-align: left; font-size: 12px; text-transform: uppercase; color: #94a3b8; padding: 12px 16px; border-bottom: 1px solid #eef1f5; }
         .admin-tasks-table td { padding: 14px 16px; font-size: 14px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
         .admin-tasks-table tr:last-child td { border-bottom: none; }
-        .task-title-cell strong { color: #1e293b; display: block; cursor: pointer; }
+        .task-title-cell strong { color: #1e293b; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
         .task-title-cell strong:hover { color: #0a7c6e; text-decoration: underline; }
-        .task-title-cell span { color: #64748b; font-size: 12.5px; }
+        .task-title-cell span { color: #64748b; font-size: 12.5px; display: block; }
+        .admin-tasks-table tr.has-new-comment { background-color: #fffbeb; }
+        .admin-tasks-table tr.has-new-comment:hover { background-color: #fef3c7; }
+        .new-comment-dot { width: 8px; height: 8px; border-radius: 50%; background-color: #f59e0b; flex-shrink: 0; display: inline-block; }
+        .comment-count-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; color: #64748b; }
         .status-chip { display: inline-block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; padding: 4px 10px; border-radius: 12px; }
         .status-chip.pending { background: #fef3c7; color: #92400e; }
         .status-chip.completed { background: #d1fae5; color: #065f46; }
@@ -236,6 +261,20 @@ export default function AdminTasks() {
         .view-field { margin-bottom: 14px; }
         .view-field .vf-label { font-size: 11.5px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 3px; }
         .view-field .vf-value { font-size: 14.5px; color: #1e293b; }
+        .modal-box.wide { max-width: 560px; }
+        .comments-section { margin-top: 20px; border-top: 1px solid #eef1f5; padding-top: 16px; }
+        .comments-section .vf-label { margin-bottom: 10px; }
+        .comments-list { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+        .comment-item { background: #f8fafc; border-radius: 8px; padding: 10px 12px; }
+        .comment-item-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+        .comment-item-author { font-size: 13px; font-weight: 700; color: #1e293b; }
+        .comment-item-time { font-size: 11px; color: #94a3b8; }
+        .comment-item-text { font-size: 13.5px; color: #334155; white-space: pre-wrap; }
+        .comments-empty { font-size: 13px; color: #94a3b8; padding: 10px 0; }
+        .comment-form { display: flex; gap: 8px; align-items: flex-end; }
+        .comment-form textarea { flex: 1; resize: vertical; min-height: 40px; }
+        .comment-form button { background: #0a7c6e; color: #fff; border: none; border-radius: 6px; padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+        .comment-form button:disabled { opacity: 0.6; cursor: not-allowed; }
       `}</style>
 
       <div className="admin-tasks-page">
@@ -296,10 +335,18 @@ export default function AdminTasks() {
                   const canReopen = task.status === "completed";
 
                   return (
-                    <tr key={task.id}>
+                    <tr key={task.id} className={task.has_new_comment ? "has-new-comment" : ""}>
                       <td className="task-title-cell">
-                        <strong onClick={() => openTaskById(task.id)}>{task.title}</strong>
+                        <strong onClick={() => openTaskById(task.id)}>
+                          {task.has_new_comment && <span className="new-comment-dot" title="New comment"></span>}
+                          {task.title}
+                        </strong>
                         {task.description && <span>{task.description}</span>}
+                        {task.comments_count > 0 && (
+                          <span className="comment-count-pill">
+                            <i className="fa-solid fa-comment"></i> {task.comments_count}
+                          </span>
+                        )}
                       </td>
                       <td>{otherParty?.name || "N/A"}</td>
                       <td>
@@ -422,7 +469,7 @@ export default function AdminTasks() {
       {/* View modal */}
       {viewTask && (
         <div className="modal-backdrop" onClick={closeViewModal}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-box wide" onClick={(e) => e.stopPropagation()}>
             <h3>Task Details</h3>
 
             {viewLoading ? (
@@ -469,6 +516,47 @@ export default function AdminTasks() {
                     <div className="vf-value">{formatDateTime(viewTask.completed_at)}</div>
                   </div>
                 )}
+
+                <div className="comments-section">
+                  <div className="vf-label">
+                    Comments{viewTask.comments?.length ? ` (${viewTask.comments.length})` : ""}
+                  </div>
+
+                  <div className="comments-list">
+                    {!viewTask.comments || viewTask.comments.length === 0 ? (
+                      <div className="comments-empty">No comments yet.</div>
+                    ) : (
+                      viewTask.comments.map((c) => (
+                        <div key={c.id} className="comment-item">
+                          <div className="comment-item-head">
+                            <span className="comment-item-author">
+                              {c.commented_by?.name || "N/A"}
+                              {String(c.commented_by?.id) === String(currentAdminId) ? " (You)" : ""}
+                            </span>
+                            <span className="comment-item-time">{formatDateTime(c.created_at)}</span>
+                          </div>
+                          <div className="comment-item-text">{c.comment}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="comment-form">
+                    <textarea
+                      rows={2}
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      placeholder="Write a comment…"
+                    />
+                    <button
+                      type="button"
+                      disabled={commentSubmitting || !newComment.trim()}
+                      onClick={handleAddComment}
+                    >
+                      {commentSubmitting ? "Posting…" : "Post"}
+                    </button>
+                  </div>
+                </div>
 
                 <div className="modal-actions" style={{ justifyContent: "space-between" }}>
                   <div style={{ display: "flex", gap: 8 }}>
