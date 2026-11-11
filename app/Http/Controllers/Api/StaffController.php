@@ -1885,6 +1885,12 @@ public function updateGuardDocuments(Request $request)
             'first_aid_cert'          => 'nullable|string|max:50',
             'first_aid_expiry'        => 'nullable|string',
             'first_aid_doc'           => 'nullable|string',
+            'medical_history'         => 'nullable|string|in:yes,no',
+            'medical_history_details' => 'nullable|string|max:2000',
+            'criminal_history'        => 'nullable|string|in:yes,no',
+            'criminal_history_details'=> 'nullable|string|max:2000',
+            'work_experience'         => 'nullable|string|max:3000',
+            'resume_doc'              => 'nullable|string',
             'signature'               => 'nullable|string|max:150',
             'date'                    => 'nullable|string',
         ]);

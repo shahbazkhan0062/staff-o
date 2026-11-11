@@ -13,6 +13,9 @@ class Onboarding extends Model {
         'bank_name','bsb','account_number','tfn','super_fund','super_usi',
         'super_member','security_license','security_license_expiry',
         'first_aid_cert','first_aid_expiry','signature','signed_date','user_id',
-        'security_license_doc','passport_doc','first_aid_doc'
+        'security_license_doc','passport_doc','first_aid_doc',
+        'medical_history','medical_history_details',
+        'criminal_history','criminal_history_details',
+        'work_experience','resume_doc'
     ];
 }
