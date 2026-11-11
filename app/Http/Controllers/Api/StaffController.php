@@ -1870,6 +1870,7 @@ public function updateGuardDocuments(Request $request)
             'passport_expiry'         => 'nullable|string',
             'passport_doc'            => 'nullable|string',
             'work_rights'             => 'nullable|string',
+            'visa_type'               => 'nullable|string',
             'id_checks'               => 'nullable|array',
             'bank_name'               => 'nullable|string|max:100',
             'bsb'                     => 'nullable|string|max:10',
