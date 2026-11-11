@@ -2056,15 +2056,37 @@ public function updateGuardDocuments(Request $request)
             }
 
             // Upload file
-            if ($request->has('upload')) {
-                $fileName = fileUpload($request->upload, '/' . $request->folder . '/');
-            } elseif ($request->has('file')) {
-                $fileName = fileUpload($request->file, '/' . $request->folder . '/');
-            } else {
+            $incomingFile = $request->upload ?? $request->file ?? null;
+
+            if (!$incomingFile) {
                 return response()->json([
-                    'success' => false, 
+                    'success' => false,
                     'message' => 'No file provided'
                 ]);
+            }
+
+            // The TFN / Superannuation / Onboarding forms are a single
+            // document per staff member: store them under a fixed,
+            // deterministic filename (no random prefix, no timestamp) so the
+            // name saved to the staff record always matches the actual file
+            // on disk, and re-submitting simply overwrites the old PDF
+            // instead of leaving the DB pointing at a stale/mismatched name.
+            $safeUserId = (int) $request->user_id;
+            $deterministicNames = [
+                'tfn'        => "TFN_Declaration_{$safeUserId}.pdf",
+                'super_form' => "Superannuation_{$safeUserId}.pdf",
+                'onboarding' => "Employee_Onboarding_{$safeUserId}.pdf",
+            ];
+
+            if (isset($deterministicNames[$request->type])) {
+                $fileName = $deterministicNames[$request->type];
+                $incomingFile->move(public_path('/' . $request->folder . '/'), $fileName);
+            } else {
+                // Individually-uploaded documents (passport, security
+                // license, first aid, resume, etc.) keep the existing
+                // randomized-prefix naming since several distinct files can
+                // coexist for the same staff member.
+                $fileName = fileUpload($incomingFile, '/' . $request->folder . '/');
             }
 
             if ($fileName) {
