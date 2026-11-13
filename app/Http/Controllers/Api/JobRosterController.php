@@ -1269,17 +1269,16 @@ private function sendStaffActivationNotification(User $user): void
                 }   
 
                 $rosterStart = Carbon::parse($roster->start);
-                $weekStart = $rosterStart->copy()->startOfWeek();
-                $weekEnd   = $rosterStart->copy()->endOfWeek();
+                [$fortnightStart, $fortnightEnd] = $this->getFortnightRange($rosterStart);
 
-                $currentWeekHours = DB::table('job_rosters')
+                $currentFortnightHours = DB::table('job_rosters')
                     ->where('assigned_to', $id)
-                    ->whereBetween('start', [$weekStart, $weekEnd])
+                    ->whereBetween('start', [$fortnightStart, $fortnightEnd])
                     ->sum('hours');
 
-                $currentWeekHours = $currentWeekHours ?? 0;
+                $currentFortnightHours = $currentFortnightHours ?? 0;
                 $currentJobHours = $roster->hours ?? 0;
-                $totalHours = $currentWeekHours + $currentJobHours;
+                $totalHours = $currentFortnightHours + $currentJobHours;
 
                 $user = \App\Models\User::with('staff')->find($id);
 
@@ -1293,17 +1292,17 @@ private function sendStaffActivationNotification(User $user): void
                 $visaType = $user->staff->staff_document_type;
 
                 if ($visaType === 'student_visa') {
-                    if ($totalHours > 24) {
+                    if ($totalHours > 48) {
                         return response()->json([
                             'success' => false,
-                            'message' => 'Weekly limit exceeded (24 hours for student visa).'
+                            'message' => 'Fortnightly limit exceeded (48 hours for student visa).'
                         ], 200);
                     }
                 } else {
-                    if ($totalHours > 38) {
+                    if ($totalHours > 72) {
                         return response()->json([
                             'success' => false,
-                            'message' => 'Weekly limit exceeded (38 hours allowed).'
+                            'message' => 'Fortnightly limit exceeded (72 hours allowed).'
                         ], 200);
                     }
                 }
@@ -6153,6 +6152,45 @@ private function sendStaffActivationNotification(User $user): void
         return $total;
     }
 
+    /**
+     * The fixed, non-overlapping fortnight (14-day pay period) that a given
+     * date falls in.
+     *
+     * Fortnights are Monday-aligned and anchored to FORTNIGHT_EPOCH (a known
+     * Monday) so the boundaries never shift and never overlap: whichever
+     * date you pass in, you get back the same pair of dates as anyone else
+     * whose shift falls anywhere in that same 14-day block.
+     *
+     * With the current epoch (2024-01-01):
+     *   04-11-2026 (Wed) -> 02-11-2026 to 15-11-2026
+     *   09-11-2026 (Mon) -> 02-11-2026 to 15-11-2026  (same fortnight as above)
+     *   16-11-2026 (Mon) -> 16-11-2026 to 29-11-2026  (next fortnight)
+     *
+     * If your real payroll fortnight starts on a different reference date,
+     * change FORTNIGHT_EPOCH to a Monday that matches it and every boundary
+     * shifts accordingly.
+     *
+     * @return array{0: \Carbon\Carbon, 1: \Carbon\Carbon} [fortnightStart, fortnightEnd]
+     */
+    private function getFortnightRange($date)
+    {
+        $date = Carbon::parse($date);
+        $weekStart = $date->copy()->startOfWeek(Carbon::MONDAY);
+
+        $epoch = Carbon::parse('2024-01-01')->startOfWeek(Carbon::MONDAY); // FORTNIGHT_EPOCH
+        $weeksSinceEpoch = (int) $epoch->diffInWeeks($weekStart);
+
+        // Even weeks-since-epoch => this week opens the fortnight; odd => it's
+        // the second week, so the fortnight actually started the week before.
+        $fortnightStart = $weeksSinceEpoch % 2 === 0
+            ? $weekStart
+            : $weekStart->copy()->subWeek();
+
+        $fortnightEnd = $fortnightStart->copy()->addDays(13)->endOfDay();
+
+        return [$fortnightStart, $fortnightEnd];
+    }
+
     private function getResourcePartners($siteId)
     {
         $siteState = Site::where('id', $siteId)->value('state');
@@ -6339,7 +6377,7 @@ private function sendStaffActivationNotification(User $user): void
             }
 
             // Check if adding this job would exceed 12 hours on this day
-            if (($totalHoursToday + $jobDuration) > 12) {
+            if (($totalHoursToday + $jobDuration) >= 12) {
                 Log::info("Guard #{$guardId} blocked for job #{$job->id} on {$jobDate}: Current hours ({$totalHoursToday}) + this job ({$jobDuration}h) would exceed 12 hours");
                 return false;
             }
@@ -7362,19 +7400,18 @@ public function contractor_accept_job(Request $request, $id)
                 ], 200);
             }
  
-            // Calculate weekly hours
+            // Calculate fortnightly hours
             $rosterStart = Carbon::parse($roster->start);
-            $weekStart = $rosterStart->copy()->startOfWeek();
-            $weekEnd = $rosterStart->copy()->endOfWeek();
- 
-            $currentWeekHours = DB::table('job_rosters')
+            [$fortnightStart, $fortnightEnd] = $this->getFortnightRange($rosterStart);
+
+            $currentFortnightHours = DB::table('job_rosters')
                 ->where('assigned_to', $request->guard_id)
-                ->whereBetween('start', [$weekStart, $weekEnd])
+                ->whereBetween('start', [$fortnightStart, $fortnightEnd])
                 ->sum('hours');
- 
-            $currentWeekHours = $currentWeekHours ?? 0;
+
+            $currentFortnightHours = $currentFortnightHours ?? 0;
             $currentJobHours = $roster->hours ?? 0;
-            $totalHours = $currentWeekHours + $currentJobHours;
+            $totalHours = $currentFortnightHours + $currentJobHours;
  
             // Get user with staff relationship
             $user = \App\Models\User::with('staff')->find($request->guard_id);
@@ -7392,27 +7429,27 @@ public function contractor_accept_job(Request $request, $id)
                 ], 200);
             }
  
-            // Check visa type and weekly limits
+            // Check visa type and fortnightly limits
             $visaType = $user->staff->staff_document_type;
-            $maxHours = $visaType === 'student_visa' ? 24 : 38;
- 
+            $maxHours = $visaType === 'student_visa' ? 48 : 72;
+
             if ($totalHours > $maxHours) {
                 return response()->json([
                     'success' => false,
                     'message' => $visaType === 'student_visa'
-                        ? 'Weekly limit exceeded (24 hours for student visa).'
-                        : 'Weekly limit exceeded (38 hours allowed).',
+                        ? 'Fortnightly limit exceeded (48 hours for student visa).'
+                        : 'Fortnightly limit exceeded (72 hours allowed).',
                     'data' => null,
                     'details' => [
                         'guard_id' => $request->guard_id,
                         'visa_type' => $visaType,
-                        'max_weekly_hours' => $maxHours,
-                        'current_week_hours' => $currentWeekHours,
+                        'max_fortnightly_hours' => $maxHours,
+                        'current_fortnight_hours' => $currentFortnightHours,
                         'current_job_hours' => $currentJobHours,
                         'total_hours' => $totalHours,
                         'hours_remaining' => $maxHours - $totalHours,
-                        'week_start' => $weekStart->format('Y-m-d'),
-                        'week_end' => $weekEnd->format('Y-m-d')
+                        'fortnight_start' => $fortnightStart->format('Y-m-d'),
+                        'fortnight_end' => $fortnightEnd->format('Y-m-d')
                     ],
                     'roster_details' => [
                         'id' => $roster->id,
@@ -9012,7 +9049,7 @@ public function reject_charge_rate_request(Request $request, $id)
 
 public function releaseContractorPayout($rosterId)
 {
-    $roster = DB::table('job_rosters')
+      $roster = DB::table('job_rosters')
         ->join('sites', 'sites.id', '=', 'job_rosters.site_id')
         ->where('job_rosters.id', $rosterId)
         ->select('job_rosters.*', 'sites.address')
@@ -9112,8 +9149,8 @@ public function releaseContractorPayout($rosterId)
         'service_label'        => 'Automated Timesheet & Geofence Verification',
 
         'contractor' => [
-            'name'    => $contractor->contractor->company_name ?? $contractor->name,
-            'abn'     => $contractor->contractor->abn ?? 'N/A',
+            'name'    => $contractorProfile?->company_name ?? $contractor->name ?? 'N/A',
+            'abn'     => $contractorProfile?->abn ?? 'N/A',
             'attn'    => $contractor->phone ?? 'Finance Team',
             'address' => $contractor->address ?? '',
         ],

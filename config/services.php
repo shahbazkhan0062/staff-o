@@ -78,6 +78,18 @@ return [
         // Generate with:  php -r "echo bin2hex(random_bytes(32));"
         'function_secret'      => env('RETELL_FUNCTION_SECRET'),
         'whatsapp_enabled' => env('WHATSAPP_AI_SUPPORT_ENABLED', true),
+
+        // NEW — outbound welcome-call agent (separate Retell agent/phone
+        // number from the chat agent above, fires once per new client/
+        // resource-partner registration).
+        'outbound_agent_id'    => env('RETELL_OUTBOUND_AGENT_ID'), // only needed if from_number isn't dedicated to this agent in Retell
+        'outbound_from_number' => env('RETELL_OUTBOUND_FROM_NUMBER'), // the Twilio/Retell number the welcome-call agent calls from, e.g. +61...
+
+        // Short pause after registration before calling, just so the call
+        // doesn't land before the confirmation email/registration request
+        // has even finished. No retry/wait logic beyond this — the agent
+        // asks for state itself on the call, so there's nothing to wait for.
+        'welcome_call_delay_minutes' => env('WELCOME_CALL_DELAY_MINUTES', 2),
     ],
 
     // NEW — WhatsApp notification system (account/job/payment events +

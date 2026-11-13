@@ -84,6 +84,15 @@ class AuthController extends Controller
         
         $this->EmailVerify($request->email);
 
+        // NEW — outbound welcome call (separate Retell voice agent from the
+        // support chat agent). Short delay just so it doesn't fire before
+        // this request has even finished — the agent asks for state itself
+        // on the call, so there's no need to wait for it to be set here.
+        if (in_array($data['user_type'], ['customer', 'contractor'], true)) {
+            \App\Jobs\TriggerWelcomeCallJob::dispatch($user->id)
+                ->delay(now()->addMinutes((int) config('services.retell.welcome_call_delay_minutes', 2)));
+        }
+
         if($data['user_type'] == 'customer'){
             Customer::create([
                 'user_id' => $user->id,
