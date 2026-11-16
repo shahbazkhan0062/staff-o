@@ -67,6 +67,11 @@ class RetellOutboundCallService
             'account_type' => $accountType,
             'state'        => (string) ($user->state ?: ''),
             'caller_email' => (string) ($user->email ?: ''),
+            // So the prompt can always pass a real contact number on any
+            // escalation, even when the caller doesn't repeat it themselves —
+            // this was previously missing, so escalation emails went out
+            // with no phone number on them at all.
+            'caller_phone' => (string) $toPhone,
         ];
 
         $payload = [
