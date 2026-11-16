@@ -52,6 +52,36 @@ const displayToISO = (val) => {
     return cleaned;
 };
 
+/* ---------- Fetch an uploaded signature image as a data URL for PDF embedding ----------
+ * Uploaded signature-pad images are served as plain static files with no CORS
+ * headers, so the browser blocks reading their pixels cross-origin (needed to
+ * embed them into the generated PDF). Routing the same file through the
+ * authenticated `api/staff-document-proxy` endpoint lets the app's own CORS
+ * configuration apply, so the fetch succeeds and we can convert the result to
+ * a data URL. Returns "" on any failure so PDF generation can fall back to
+ * showing the typed-name text instead.
+ */
+const fetchSignatureImageDataUrl = async (signatureValue, token) => {
+    if (!PDFGenerator.isImageSignature(signatureValue)) return "";
+    try {
+        const res = await fetch(
+            `${apiURL}api/staff-document-proxy?path=${encodeURIComponent(signatureValue)}`,
+            { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+        );
+        if (!res.ok) return "";
+        const blob = await res.blob();
+        return await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(typeof reader.result === "string" ? reader.result : "");
+            reader.onerror = () => resolve("");
+            reader.readAsDataURL(blob);
+        });
+    } catch (err) {
+        console.warn("Could not load signature image for PDF:", err);
+        return "";
+    }
+};
+
 /* ---------- Error Message Helper Component ---------- */
 const FieldError = ({ error }) => {
     if (!error) return null;
@@ -494,6 +524,12 @@ const mapStaffInfoToOnboardForm = (staff) => ({
     o_superfund: "",
     o_superusi: "",
     o_member: "",
+    o_medical_history: "no",
+    o_medical_details: "",
+    o_criminal_history: "no",
+    o_criminal_details: "",
+    o_work_experience: "",
+    resume_doc: "",
     sig3: staff.name || "",
     date3: todayDDMMYYYY(),
 });
@@ -861,7 +897,7 @@ const SuperannuationForm = ({ values, loading, onChange, onSubmit, onDownloadPDF
                 ) : (
                     <div className="p-3 bg-light rounded-3 border mb-4 text-muted small" style={{ textTransform: "none" }}>
                         <b className="text-dark d-block mb-1">
-                            <i className="fa-solid fa-building me-2 text-primary"></i>Capital Services Pty Ltd
+                            <i className="fa-solid fa-building me-2 text-primary"></i>Capital Services Pty Ltd trading as Staffoo
                         </b>
                         ABN: 48 613 317 838 · 21 Tanglewood Bvd, Truganina VIC 3029
                     </div>
@@ -1368,6 +1404,109 @@ const EmployeeOnboardingForm = ({
                         </div>
                     </div>
 
+                    <SectionHeader icon="fa-briefcase-medical">Medical History</SectionHeader>
+                    <div className="row g-4 mb-4">
+                        <div className="col-12">
+                            <label className={`${labelCls} d-block`}>
+                                Do you have any medical condition relevant to this role?
+                            </label>
+                            <PillRadioGroup
+                                name="o_medical_history"
+                                value={values.o_medical_history}
+                                onChange={onChange}
+                                error={errors.o_medical_history}
+                                options={[
+                                    { value: "no", label: "No" },
+                                    { value: "yes", label: "Yes" },
+                                ]}
+                            />
+                        </div>
+                        {values.o_medical_history === "yes" && (
+                            <div className="col-12 animate__animated animate__fadeIn">
+                                <label className={labelCls}>
+                                    Medical History Details <span className="text-danger">*</span>
+                                </label>
+                                <textarea
+                                    className={`form-control py-2 px-3 ${errors.o_medical_details ? "is-invalid border-danger" : "border-light-subtle bg-light"} focus-ring focus-ring-primary`}
+                                    style={{ backgroundColor: errors.o_medical_details ? "#fff8f8" : undefined, fontSize: "1rem" }}
+                                    name="o_medical_details"
+                                    rows={3}
+                                    maxLength="500"
+                                    placeholder="Please provide details of the medical condition"
+                                    value={values.o_medical_details}
+                                    onChange={onChange}
+                                />
+                                <FieldError error={errors.o_medical_details} />
+                            </div>
+                        )}
+                    </div>
+
+                    <SectionHeader icon="fa-gavel">Criminal History</SectionHeader>
+                    <div className="row g-4 mb-4">
+                        <div className="col-12">
+                            <label className={`${labelCls} d-block`}>
+                                Do you have any criminal convictions on record?
+                            </label>
+                            <PillRadioGroup
+                                name="o_criminal_history"
+                                value={values.o_criminal_history}
+                                onChange={onChange}
+                                error={errors.o_criminal_history}
+                                options={[
+                                    { value: "no", label: "No" },
+                                    { value: "yes", label: "Yes" },
+                                ]}
+                            />
+                        </div>
+                        {values.o_criminal_history === "yes" && (
+                            <div className="col-12 animate__animated animate__fadeIn">
+                                <label className={labelCls}>
+                                    Criminal History Details <span className="text-danger">*</span>
+                                </label>
+                                <textarea
+                                    className={`form-control py-2 px-3 ${errors.o_criminal_details ? "is-invalid border-danger" : "border-light-subtle bg-light"} focus-ring focus-ring-primary`}
+                                    style={{ backgroundColor: errors.o_criminal_details ? "#fff8f8" : undefined, fontSize: "1rem" }}
+                                    name="o_criminal_details"
+                                    rows={3}
+                                    maxLength="500"
+                                    placeholder="Please provide details of the conviction(s)"
+                                    value={values.o_criminal_details}
+                                    onChange={onChange}
+                                />
+                                <FieldError error={errors.o_criminal_details} />
+                            </div>
+                        )}
+                    </div>
+
+                    <SectionHeader icon="fa-user-tie">Work Experience</SectionHeader>
+                    <div className="row g-4 mb-4">
+                        <div className="col-12">
+                            <label className={labelCls}>Relevant Work Experience</label>
+                            <textarea
+                                className="form-control border-light-subtle bg-light focus-ring focus-ring-primary py-2 px-3"
+                                name="o_work_experience"
+                                rows={4}
+                                maxLength="1000"
+                                placeholder="Briefly describe your previous relevant work experience (employer, role, duration)"
+                                value={values.o_work_experience}
+                                onChange={onChange}
+                                style={{ fontSize: "1rem" }}
+                            />
+                            <FieldError error={errors.o_work_experience} />
+                        </div>
+                        <div className="col-12">
+                            <DocumentUploadField
+                                label="Upload Resume / CV"
+                                filePath={values.resume_doc}
+                                onUpload={(e) => onDocUpload(e, "resume_doc")}
+                                accept=".pdf,.doc,.docx"
+                                error={errors.resume_doc}
+                                validating={docValidatingField === "resume_doc"}
+                                validatingStatus={docValidatingStatus}
+                            />
+                        </div>
+                    </div>
+
                     <SectionHeader icon="fa-signature">Declaration and Signature</SectionHeader>
                     <div className="row g-4">
                         <div className="col-md-6">
@@ -1482,6 +1621,12 @@ const normalizeOnboardData = (apiData) => {
         o_fa: apiData?.first_aid_cert ?? apiData?.o_fa ?? "",
         o_faexp: isoToDisplay(apiData?.first_aid_expiry),
         first_aid_doc: apiData?.first_aid_doc ?? "",
+        o_medical_history: apiData?.medical_history ?? apiData?.o_medical_history ?? "no",
+        o_medical_details: apiData?.medical_history_details ?? apiData?.o_medical_details ?? "",
+        o_criminal_history: apiData?.criminal_history ?? apiData?.o_criminal_history ?? "no",
+        o_criminal_details: apiData?.criminal_history_details ?? apiData?.o_criminal_details ?? "",
+        o_work_experience: apiData?.work_experience ?? apiData?.o_work_experience ?? "",
+        resume_doc: apiData?.resume_doc ?? "",
         sig3: apiData?.signature ?? apiData?.sig3 ?? "",
         date3: isoToDisplay(apiData?.signed_date ?? apiData?.date) || todayDDMMYYYY(),
     };
@@ -1527,6 +1672,13 @@ const validateOnboardForm = (values, isTasOrSa = false) => {
     if (!values.o_fa?.trim()) errs.o_fa = "First aid certificate number is required";
     if (!values.first_aid_doc) errs.first_aid_doc = "First aid document upload is required";
     if (!values.o_faexp?.trim()) errs.o_faexp = "First aid expiry date is required";
+
+    if (values.o_medical_history === "yes" && !values.o_medical_details?.trim()) {
+        errs.o_medical_details = "Please provide medical history details";
+    }
+    if (values.o_criminal_history === "yes" && !values.o_criminal_details?.trim()) {
+        errs.o_criminal_details = "Please provide criminal history details";
+    }
 
     if (!values.sig3?.trim()) errs.sig3 = "Employee signature is required";
     if (!values.date3?.trim()) errs.date3 = "Date is required";
@@ -1578,6 +1730,7 @@ const StaffOnboardingForms = ({ submit, userId, onProfileUpdate }) => {
     const currentUserId = useSelector(
         (state) => state.auth.userdata?.data?.id || state.auth.userdata?.id
     );
+    const authToken = useSelector((state) => state.auth.token);
 
     // ---- User‑profile refetch to update Redux after saves ----
     const userEditEndpoint = useMemo(
@@ -1877,7 +2030,13 @@ const StaffOnboardingForms = ({ submit, userId, onProfileUpdate }) => {
                 method: "POST",
             });
             if (res?.success || res?.file_path) {
-                const uploadedPath = res?.file_path || res?.data?.file_path || file.name;
+                // The upload-staff-file endpoint returns the saved file as
+                // `url` (absolute, always correct regardless of which folder
+                // it landed in) and `path` (bare stored filename). Previously
+                // this looked for a `file_path` key the endpoint never
+                // returns, so it silently fell back to the raw, un-prefixed
+                // `file.name` — which 404s once resolved back into a URL.
+                const uploadedPath = res?.url || res?.path || res?.file_path || res?.data?.file_path || file.name;
                 setOnboardForm((prev) => ({ ...prev, [fieldName]: uploadedPath }));
                 setDataModified(true);
                 toast.success(`${valRes.docDisplayName || "Document"} verified and uploaded successfully!`);
@@ -2018,7 +2177,14 @@ const StaffOnboardingForms = ({ submit, userId, onProfileUpdate }) => {
                 security_license: onboardForm.o_seclic, security_license_expiry: onboardForm.o_seclicexp,
                 security_license_doc: onboardForm.security_license_doc,
                 first_aid_cert: onboardForm.o_fa, first_aid_expiry: onboardForm.o_faexp,
-                first_aid_doc: onboardForm.first_aid_doc, signature: onboardForm.sig3,
+                first_aid_doc: onboardForm.first_aid_doc,
+                medical_history: onboardForm.o_medical_history,
+                medical_history_details: onboardForm.o_medical_history === "yes" ? onboardForm.o_medical_details : "",
+                criminal_history: onboardForm.o_criminal_history,
+                criminal_history_details: onboardForm.o_criminal_history === "yes" ? onboardForm.o_criminal_details : "",
+                work_experience: onboardForm.o_work_experience,
+                resume_doc: onboardForm.resume_doc,
+                signature: onboardForm.sig3,
                 date: onboardForm.date3
             };
             pdfFormData = { ...payload };
@@ -2046,10 +2212,13 @@ const StaffOnboardingForms = ({ submit, userId, onProfileUpdate }) => {
             setDataModified(false);
 
             try {
+                const signatureImage = await fetchSignatureImageDataUrl(pdfFormData.signature, authToken);
+                const pdfFormDataWithSig = signatureImage ? { ...pdfFormData, signature_image: signatureImage } : pdfFormData;
+
                 let doc;
-                if (tabIndex === 0) doc = PDFGenerator.generateEmployeeOnboardingPDF(pdfFormData);
-                else if (tabIndex === 1) doc = PDFGenerator.generateTFNDeclarationPDF(pdfFormData);
-                else if (tabIndex === 2) doc = PDFGenerator.generateSuperannuationPDF(pdfFormData);
+                if (tabIndex === 0) doc = await PDFGenerator.generateEmployeeOnboardingPDF(pdfFormDataWithSig);
+                else if (tabIndex === 1) doc = await PDFGenerator.generateTFNDeclarationPDF(pdfFormDataWithSig);
+                else if (tabIndex === 2) doc = await PDFGenerator.generateSuperannuationPDF(pdfFormDataWithSig);
 
                 const uploadPayload = { user_id: userId, type: pdfType, folder: "onboarding_forms" };
                 await PDFGenerator.downloadAndUploadPDF(doc, fileName, "api/upload-staff-file", uploadPayload, submit);
@@ -2071,7 +2240,7 @@ const StaffOnboardingForms = ({ submit, userId, onProfileUpdate }) => {
         }
     };
 
-    const downloadPDF = (formType) => {
+    const downloadPDF = async (formType) => {
         if (!userId) {
             toast.error("User ID missing");
             return;
@@ -2100,11 +2269,19 @@ const StaffOnboardingForms = ({ submit, userId, onProfileUpdate }) => {
                 security_license: onboardForm.o_seclic, security_license_expiry: onboardForm.o_seclicexp,
                 security_license_doc: onboardForm.security_license_doc,
                 first_aid_cert: onboardForm.o_fa, first_aid_expiry: onboardForm.o_faexp,
-                first_aid_doc: onboardForm.first_aid_doc, signature: onboardForm.sig3,
+                first_aid_doc: onboardForm.first_aid_doc,
+                medical_history: onboardForm.o_medical_history,
+                medical_history_details: onboardForm.o_medical_history === "yes" ? onboardForm.o_medical_details : "",
+                criminal_history: onboardForm.o_criminal_history,
+                criminal_history_details: onboardForm.o_criminal_history === "yes" ? onboardForm.o_criminal_details : "",
+                work_experience: onboardForm.o_work_experience,
+                resume_doc: onboardForm.resume_doc,
+                signature: onboardForm.sig3,
                 date: onboardForm.date3
             };
             fileName = `Employee_Onboarding_${userId}.pdf`;
-            doc = PDFGenerator.generateEmployeeOnboardingPDF(pdfFormData);
+            pdfFormData.signature_image = await fetchSignatureImageDataUrl(pdfFormData.signature, authToken);
+            doc = await PDFGenerator.generateEmployeeOnboardingPDF(pdfFormData);
         } else if (formType === "tfn") {
             pdfFormData = {
                 user_id: userId, tfn: tfnForm.tfn, title: tfnForm.title,
@@ -2115,7 +2292,8 @@ const StaffOnboardingForms = ({ submit, userId, onProfileUpdate }) => {
                 help_debt: tfnForm.help, signature: tfnForm.sig1, date: tfnForm.date1
             };
             fileName = `TFN_Declaration_${userId}.pdf`;
-            doc = PDFGenerator.generateTFNDeclarationPDF(pdfFormData);
+            pdfFormData.signature_image = await fetchSignatureImageDataUrl(pdfFormData.signature, authToken);
+            doc = await PDFGenerator.generateTFNDeclarationPDF(pdfFormData);
         } else if (formType === "super_form") {
             pdfFormData = {
                 user_id: userId, full_name: superForm.s_name,
@@ -2126,7 +2304,8 @@ const StaffOnboardingForms = ({ submit, userId, onProfileUpdate }) => {
                 date: superForm.date2
             };
             fileName = `Superannuation_${userId}.pdf`;
-            doc = PDFGenerator.generateSuperannuationPDF(pdfFormData);
+            pdfFormData.signature_image = await fetchSignatureImageDataUrl(pdfFormData.signature, authToken);
+            doc = await PDFGenerator.generateSuperannuationPDF(pdfFormData);
         }
 
         if (doc) {

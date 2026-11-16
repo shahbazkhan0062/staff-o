@@ -15,7 +15,7 @@ const drawStaffooHeader = (doc, pageWidth) => {
 
     doc.setFontSize(8);
     doc.setFont("helvetica", "bold");
-    doc.text("Capital Services Pty Ltd | ABN: 48 613 317 838", pageWidth - 15, 12, { align: "right" });
+    doc.text("Capital Services Pty Ltd trading as Staffoo | ABN: 48 613 317 838", pageWidth - 15, 12, { align: "right" });
     doc.setFont("helvetica", "normal");
     doc.text("21 Tanglewood Bvd, Truganina VIC 3029", pageWidth - 15, 16, { align: "right" });
     doc.text("Admin@staffoo.com.au", pageWidth - 15, 20, { align: "right" });

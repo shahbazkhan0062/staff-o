@@ -152,8 +152,8 @@ html { scroll-behavior: smooth; } */
 .nh-nav-links {
   display: flex;
   align-items: center;
-  gap: 26px;
-  margin-left: 48px;
+  gap: 4px;
+  margin-left: 36px;
 }
 
 .nh-nav-links>div {
@@ -162,39 +162,23 @@ html { scroll-behavior: smooth; } */
 
 .nh-nav-item {
   font-size: 14.5px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--nh-ink-soft);
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   cursor: pointer;
-  padding: 8px 2px;
+  padding: 9px 14px;
+  border-radius: 999px;
   text-decoration: none;
   position: relative;
   white-space: nowrap;
-  transition: color .15s ease;
-}
-
-.nh-nav-item::after {
-  content: "";
-  position: absolute;
-  left: 2px;
-  right: 2px;
-  bottom: 2px;
-  height: 2px;
-  background: var(--nh-green);
-  border-radius: 2px;
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform .2s ease;
+  transition: color .15s ease, background .15s ease;
 }
 
 .nh-nav-item:hover {
-  color: var(--nh-green);
-}
-
-.nh-nav-item:hover::after {
-  transform: scaleX(1);
+  color: var(--nh-green-dark);
+  background: var(--nh-tint);
 }
 
 .nh-caret {
@@ -336,6 +320,8 @@ html { scroll-behavior: smooth; } */
   background: var(--nh-green-dark);
   border-color: var(--nh-green-dark);
   color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px -6px rgba(10, 124, 110, 0.45);
 }
 
 /* Thin divider between the dashboard CTA and the account menu */

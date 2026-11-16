@@ -51,7 +51,7 @@ export default function ResourcePartnerTerms() {
         <title>Resource Partner and Subcontractor Agreement | Staffoo</title>
         <meta
           name="description"
-          content="Staffoo Resource Partner and Subcontractor Agreement operated by Capital Services Pty Ltd (ABN 48 613 317 838)."
+          content="Staffoo Resource Partner and Subcontractor Agreement operated by Capital Services Pty Ltd trading as Staffoo (ABN 48 613 317 838)."
         />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
@@ -96,7 +96,7 @@ export default function ResourcePartnerTerms() {
                 </h2>
 
                 <p className="terms-hero-desc">
-                  Operated by <strong>Capital Services Pty Ltd</strong> (ABN 48 613 317 838, trading as &quot;<strong>Staffoo</strong>&quot;).
+                  Operated by <strong>Capital Services Pty Ltd trading as Staffoo</strong> (ABN 48 613 317 838, trading as &quot;<strong>Staffoo</strong>&quot;).
                   This Agreement governs the commercial and operational relationship between Staffoo and independent licensed
                   security providers, vendors, and staffing agencies (&quot;<strong>Resource Partner</strong>&quot;) accepting shift allocations
                   and deploying personnel through the Staffoo marketplace.
@@ -263,7 +263,7 @@ export default function ResourcePartnerTerms() {
                   <div>
                     <h4 className="terms-subheading">3.3 Indemnity</h4>
                     <p className="terms-paragraph">
-                      The Resource Partner indemnifies and holds harmless Capital Services Pty Ltd
+                      The Resource Partner indemnifies and holds harmless Capital Services Pty Ltd trading as Staffoo
                       against all claims, losses, fines, penalties, and legal costs arising from:
                       (a) any breach of the Fair Work Act 2009 (Cth), the Security Services Industry
                       Award 2020 [MA000016], superannuation, or workers&apos; compensation laws by the
@@ -411,7 +411,7 @@ export default function ResourcePartnerTerms() {
               {/* LEGAL ENTITY CONTACT DETAILS */}
               <div id="rp-sec-contact" className="terms-contact-card">
                 <div>
-                  <strong>Capital Services Pty Ltd</strong> &bull; ABN 48 613 317 838
+                  <strong>Capital Services Pty Ltd trading as Staffoo</strong> &bull; ABN 48 613 317 838
                   <br />
                   21 Tanglewood Bvd, Truganina VIC 3029, Australia
                 </div>

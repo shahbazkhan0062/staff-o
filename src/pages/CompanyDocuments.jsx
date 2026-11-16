@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import Modal from "../components/Modal";
 import Loader from "../components/Loader";
@@ -24,6 +24,43 @@ const formatDate = (value) => {
   const yyyy = d.getFullYear();
   return `${dd}-${mm}-${yyyy}`;
 };
+
+// Reads a dropped folder's full contents recursively, using the browser's
+// FileSystem Entry API, so dragging a whole folder onto the dropzone uploads
+// everything inside it (including nested subfolders) in one go.
+const readEntryRecursively = (entry, basePath = "") =>
+  new Promise((resolve) => {
+    if (!entry) {
+      resolve([]);
+      return;
+    }
+    if (entry.isFile) {
+      entry.file(
+        (file) => resolve([{ file, relativePath: basePath ? `${basePath}/${file.name}` : file.name }]),
+        () => resolve([])
+      );
+      return;
+    }
+    if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const collected = [];
+      const readBatch = () => {
+        reader.readEntries(async (batch) => {
+          if (!batch.length) {
+            const nestedBase = basePath ? `${basePath}/${entry.name}` : entry.name;
+            const nested = await Promise.all(collected.map((child) => readEntryRecursively(child, nestedBase)));
+            resolve(nested.flat());
+            return;
+          }
+          collected.push(...batch);
+          readBatch(); // directories can be returned in several batches
+        }, () => resolve([]));
+      };
+      readBatch();
+      return;
+    }
+    resolve([]);
+  });
 
 const getFileIcon = (name = "") => {
   const ext = (name.split(".").pop() || "").toLowerCase();
@@ -52,6 +89,15 @@ const CompanyDocuments = () => {
   const [uploadName, setUploadName] = useState("");
   const [uploadFile, setUploadFile] = useState(null);
   const [editingFile, setEditingFile] = useState(null); // file being edited
+
+  // Multi-file / whole-folder upload queue for new uploads (not used when
+  // editingFile is set — editing a single existing file keeps the simple
+  // name + single-file flow above).
+  const [pendingUploads, setPendingUploads] = useState([]); // [{ id, file, relativePath }]
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [batchUploading, setBatchUploading] = useState(false);
+  const filesInputRef = useRef(null);
+  const folderInputRef = useRef(null);
 
   const [deleteTarget, setDeleteTarget] = useState(null); // { type: 'folder'|'file', id, label }
 
@@ -159,6 +205,7 @@ const CompanyDocuments = () => {
     setEditingFile(null);
     setUploadName("");
     setUploadFile(null);
+    setPendingUploads([]);
     setShowUploadModal(true);
   };
 
@@ -166,6 +213,7 @@ const CompanyDocuments = () => {
     setEditingFile(file);
     setUploadName(file.name || "");
     setUploadFile(null);
+    setPendingUploads([]);
     setShowUploadModal(true);
   };
 
@@ -174,6 +222,197 @@ const CompanyDocuments = () => {
     setEditingFile(null);
     setUploadName("");
     setUploadFile(null);
+    setPendingUploads([]);
+    setIsDragOver(false);
+  };
+
+  // --- Multi-file / folder upload queue ---
+  const addFilesToQueue = (fileList) => {
+    const incoming = Array.from(fileList || []);
+    if (!incoming.length) return;
+    const items = incoming.map((file) => ({
+      id: `${file.webkitRelativePath || file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
+      file,
+      relativePath: file.webkitRelativePath || file.name,
+    }));
+    setPendingUploads((prev) => [...prev, ...items]);
+  };
+
+  const handleFilesPicked = (e) => {
+    addFilesToQueue(e.target.files);
+    e.target.value = "";
+  };
+
+  const handleFolderPicked = (e) => {
+    addFilesToQueue(e.target.files);
+    e.target.value = "";
+  };
+
+  const removePendingUpload = (id) => {
+    setPendingUploads((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!editingFile) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (editingFile) return; // editing a single file keeps the simple flow
+
+    const items = e.dataTransfer?.items;
+    if (items && items.length && typeof items[0]?.webkitGetAsEntry === "function") {
+      const entries = Array.from(items)
+        .map((item) => (item.kind === "file" ? item.webkitGetAsEntry() : null))
+        .filter(Boolean);
+      if (entries.length) {
+        const nested = await Promise.all(entries.map((entry) => readEntryRecursively(entry)));
+        const flat = nested.flat();
+        if (flat.length) {
+          setPendingUploads((prev) => [
+            ...prev,
+            ...flat.map((f) => ({ id: `${f.relativePath}-${Math.random().toString(36).slice(2)}`, ...f })),
+          ]);
+          return;
+        }
+      }
+    }
+
+    // Fallback for browsers without the FileSystem Entry API.
+    addFilesToQueue(e.dataTransfer?.files);
+  };
+
+  // Lists the subfolders directly under parentId. The root level and a
+  // regular folder use different list endpoints/response shapes, so this
+  // normalizes both to a plain array of { id, folder } objects.
+  const listChildFolders = async (parentId) => {
+    if (!parentId) {
+      const res = await submit("api/admin/business-folder/list", null, { method: "GET" });
+      return Array.isArray(res?.data) ? res.data : [];
+    }
+    const res = await submit(`api/admin/business-file/list?folder_id=${parentId}`, null, { method: "GET" });
+    return Array.isArray(res?.folders) ? res.folders : [];
+  };
+
+  // Resolves (creating as needed) the folder_id for a path like "A/B"
+  // relative to baseFolderId (null means the Company Documents root),
+  // caching results per batch so each subfolder is only looked
+  // up/created once even if several files share it.
+  const resolveFolderId = async (relativeFolderPath, baseFolderId, pathIdCache) => {
+    if (!relativeFolderPath) return baseFolderId;
+    if (pathIdCache.has(relativeFolderPath)) return pathIdCache.get(relativeFolderPath);
+
+    const segments = relativeFolderPath.split("/").filter(Boolean);
+    let parentId = baseFolderId;
+    let builtPath = "";
+
+    for (const segment of segments) {
+      builtPath = builtPath ? `${builtPath}/${segment}` : segment;
+
+      if (pathIdCache.has(builtPath)) {
+        parentId = pathIdCache.get(builtPath);
+        continue;
+      }
+
+      const existingFolders = await listChildFolders(parentId);
+      const existing = existingFolders.find((f) => f.folder === segment);
+
+      let folderId = existing?.id;
+
+      if (!folderId) {
+        const createRes = await submit("api/admin/business-folder/create", {
+          folder: segment,
+          parent_id: parentId,
+        });
+        folderId = createRes?.data?.id || createRes?.folder?.id || createRes?.id;
+
+        if (!folderId) {
+          // The create response may not include the new folder directly —
+          // re-list the parent and match by name as a fallback.
+          const relistFolders = await listChildFolders(parentId);
+          const found = relistFolders.find((f) => f.folder === segment);
+          folderId = found?.id;
+        }
+      }
+
+      if (!folderId) {
+        throw new Error(`Could not create or find folder "${segment}"`);
+      }
+
+      pathIdCache.set(builtPath, folderId);
+      parentId = folderId;
+    }
+
+    return parentId;
+  };
+
+  const handleBatchUpload = async () => {
+    if (pendingUploads.length === 0) {
+      toast.error("Please choose files or a folder to upload.");
+      return;
+    }
+
+    setBatchUploading(true);
+
+    const expiryDate = new Date();
+    expiryDate.setFullYear(expiryDate.getFullYear() + 15);
+    const expiryDateStr = expiryDate.toISOString().substring(0, 10);
+
+    const baseFolderId = currentFolder ? currentFolder.id : null;
+    const pathIdCache = new Map();
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const item of pendingUploads) {
+      try {
+        // Files dragged/picked as part of a folder carry a relativePath
+        // with a directory, which becomes a (nested) folder on upload.
+        // A loose file with no folder, dropped at the Company Documents
+        // root (no currentFolder), has nowhere to live there, so it goes
+        // into a catch-all "Uploaded Files" root folder instead.
+        const dirPath = item.relativePath.includes("/")
+          ? item.relativePath.split("/").slice(0, -1).join("/")
+          : currentFolder
+          ? ""
+          : "Uploaded Files";
+        const folderId = await resolveFolderId(dirPath, baseFolderId, pathIdCache);
+
+        const formData = new FormData();
+        formData.append("folder_id", folderId);
+        formData.append("name", item.file.name);
+        formData.append("expiry_date", expiryDateStr);
+        formData.append("file", item.file);
+
+        const res = await submit("api/admin/business-file/save", formData);
+        if (res?.success) successCount++;
+        else failCount++;
+      } catch (err) {
+        console.error("Upload failed for", item.relativePath, err);
+        failCount++;
+      }
+    }
+
+    setBatchUploading(false);
+    closeUploadModal();
+
+    if (successCount) {
+      toast.success(`${successCount} file${successCount !== 1 ? "s" : ""} uploaded successfully!`);
+    }
+    if (failCount) {
+      toast.error(`${failCount} file${failCount !== 1 ? "s" : ""} failed to upload.`);
+    }
+
+    refreshCurrentView();
   };
 
   const handleSaveFile = async () => {
@@ -421,12 +660,10 @@ const CompanyDocuments = () => {
             <i className="fa-solid fa-folder-plus"></i>
             {currentFolder ? "Create Folder" : "Create New Folder"}
           </button>
-          {currentFolder && (
-            <button className="cd-btn cd-btn-outline" onClick={openUploadModal} type="button">
-              <i className="fa-solid fa-upload"></i>
-              Upload Files
-            </button>
-          )}
+          <button className="cd-btn cd-btn-outline" onClick={openUploadModal} type="button">
+            <i className="fa-solid fa-upload"></i>
+            Upload Files
+          </button>
         </div>
       </div>
 
@@ -529,24 +766,123 @@ const CompanyDocuments = () => {
       </Modal>
 
       {/* Upload / Edit File Modal */}
-      <Modal open={showUploadModal} onClose={closeUploadModal} title={editingFile ? "Edit File" : "Upload File"}>
-        <div className="cd-form-group">
-          <label>File Name</label>
-          <input
-            type="text"
-            value={uploadName}
-            onChange={(e) => setUploadName(e.target.value)}
-            placeholder="Enter File Name"
-            autoFocus
-          />
-        </div>
-        <div className="cd-form-group">
-          <label>Upload File{editingFile ? " (leave empty to keep existing file)" : ""}</label>
-          <input type="file" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
-        </div>
-        <button className="cd-btn cd-btn-primary cd-modal-save" onClick={handleSaveFile} disabled={submitting} type="button">
-          {submitting ? "Saving..." : "Save"}
-        </button>
+      <Modal open={showUploadModal} onClose={closeUploadModal} title={editingFile ? "Edit File" : "Upload Files / Folder"}>
+        {editingFile ? (
+          <>
+            <div className="cd-form-group">
+              <label>File Name</label>
+              <input
+                type="text"
+                value={uploadName}
+                onChange={(e) => setUploadName(e.target.value)}
+                placeholder="Enter File Name"
+                autoFocus
+              />
+            </div>
+            <div className="cd-form-group">
+              <label>Upload File (leave empty to keep existing file)</label>
+              <input type="file" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
+            </div>
+            <button className="cd-btn cd-btn-primary cd-modal-save" onClick={handleSaveFile} disabled={submitting} type="button">
+              {submitting ? "Saving..." : "Save"}
+            </button>
+          </>
+        ) : (
+          <>
+            <div
+              className={`cd-dropzone${isDragOver ? " cd-dropzone-active" : ""}`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              style={{
+                border: "2px dashed " + (isDragOver ? "#4a90e2" : "#ccc"),
+                borderRadius: 8,
+                padding: "24px 16px",
+                textAlign: "center",
+                marginBottom: 14,
+                background: isDragOver ? "rgba(74,144,226,0.06)" : "transparent",
+              }}
+            >
+              <p style={{ margin: "0 0 10px" }}>
+                Drag &amp; drop files or a whole folder here
+              </p>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                <button
+                  type="button"
+                  className="cd-btn"
+                  onClick={() => filesInputRef.current?.click()}
+                >
+                  Choose Files
+                </button>
+                <button
+                  type="button"
+                  className="cd-btn"
+                  onClick={() => folderInputRef.current?.click()}
+                >
+                  Choose Folder
+                </button>
+              </div>
+              <input
+                ref={filesInputRef}
+                type="file"
+                multiple
+                style={{ display: "none" }}
+                onChange={handleFilesPicked}
+              />
+              <input
+                ref={folderInputRef}
+                type="file"
+                webkitdirectory="true"
+                directory="true"
+                multiple
+                style={{ display: "none" }}
+                onChange={handleFolderPicked}
+              />
+            </div>
+
+            {pendingUploads.length > 0 && (
+              <div className="cd-form-group" style={{ maxHeight: 200, overflowY: "auto" }}>
+                <label>{pendingUploads.length} file{pendingUploads.length !== 1 ? "s" : ""} ready to upload</label>
+                <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                  {pendingUploads.map((item) => (
+                    <li
+                      key={item.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "4px 0",
+                        fontSize: 13,
+                        borderBottom: "1px solid #eee",
+                      }}
+                    >
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {item.relativePath}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removePendingUpload(item.id)}
+                        style={{ border: "none", background: "none", color: "#c00", cursor: "pointer" }}
+                        aria-label="Remove"
+                      >
+                        &times;
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <button
+              className="cd-btn cd-btn-primary cd-modal-save"
+              onClick={handleBatchUpload}
+              disabled={batchUploading || pendingUploads.length === 0}
+              type="button"
+            >
+              {batchUploading ? "Uploading..." : `Upload ${pendingUploads.length || ""}`.trim()}
+            </button>
+          </>
+        )}
       </Modal>
 
       {/* Delete confirmation */}

@@ -445,7 +445,7 @@ function Footer() {
             </div>
             <p>
               A platform connecting clients, individuals, businesses and agencies with
-              independent, licensed security staff across Australia.
+              licensed security providers across Australia.
             </p>
             <div className="nh-foot-social">
               <a href="https://www.facebook.com/StaffooAU/" target="_blank" rel="noopener noreferrer" aria-label="Facebook">
@@ -496,6 +496,7 @@ function Footer() {
             <h4>Company</h4>
             <Link to="/about-us">About</Link>
             <Link to="/contact-us">Contact</Link>
+            <Link to="/how-to-use">How to Use</Link>
             <Link to="/privacy-policy">Privacy Policy</Link>
             <Link to="/terms-of-use">Terms of Use</Link>
           </div>

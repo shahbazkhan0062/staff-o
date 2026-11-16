@@ -55,6 +55,7 @@ const AllNotifications = lazy(() => import("./pages/AllNotifications"));
 const ContactUs = lazy(() => import("./pages/contact-us"));
 const Faqs = lazy(() => import("./pages/faqs"));
 const AboutUs = lazy(() => import("./pages/about-us"));
+const HowToUse = lazy(() => import("./pages/how-to-use"));
 const TermsOfUse = lazy(() => import("./pages/terms-of-use"));
 const PrivacyPolicy = lazy(() => import("./pages/privacy-policy"));
 const ClientTerms = lazy(() => import("./pages/terms/ClientTerms"));
@@ -639,6 +640,7 @@ function AppContent() {
                 <Route path="/forpartner/become-partner" element={<ProtectedRoute public><ForPartner /></ProtectedRoute>} />
                 <Route path="/forpartner/resource-partner" element={<ProtectedRoute public><ForPartner /></ProtectedRoute>} />
                 <Route path="/about-us" element={<ProtectedRoute public><AboutUs /></ProtectedRoute>} />
+                <Route path="/how-to-use" element={<ProtectedRoute public><HowToUse /></ProtectedRoute>} />
                 <Route path="/contact-us" element={<ProtectedRoute public><ContactUs /></ProtectedRoute>} />
                 <Route path="/contracts/sign" element={<ProtectedRoute public><ContractSign /></ProtectedRoute>} />
 

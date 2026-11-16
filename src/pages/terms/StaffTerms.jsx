@@ -49,7 +49,7 @@ export default function StaffTerms() {
         <title>App User Terms and Conditions (Staff) | Staffoo</title>
         <meta
           name="description"
-          content="Staffoo App User Terms and Conditions for internal and external security staff operated by Capital Services Pty Ltd (ABN 48 613 317 838)."
+          content="Staffoo App User Terms and Conditions for internal and external security staff operated by Capital Services Pty Ltd trading as Staffoo (ABN 48 613 317 838)."
         />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
@@ -94,7 +94,7 @@ export default function StaffTerms() {
                 </h2>
 
                 <p className="terms-hero-desc">
-                  Operated by <strong>Capital Services Pty Ltd</strong> (ABN 48 613 317 838).
+                  Operated by <strong>Capital Services Pty Ltd trading as Staffoo</strong> (ABN 48 613 317 838).
                   These terms establish the operational and legal conditions governing security staff,
                   crowd controllers, and workforce personnel utilizing the Staffoo platform.
                 </p>
@@ -219,7 +219,7 @@ export default function StaffTerms() {
                     </h4>
                     <p className="terms-paragraph">
                        Accessing the Staffoo app does not create an employment, agency, or contractor
-                        relationship between the User and Capital Services Pty Ltd. The User&apos;s
+                        relationship between the User and Capital Services Pty Ltd trading as Staffoo. The User&apos;s
                         employer is their respective Resource Partner, who is solely responsible for
                         payroll, superannuation, entitlements, and workers&apos; compensation under the
                         Fair Work Act 2009 (Cth).
@@ -388,7 +388,7 @@ export default function StaffTerms() {
               {/* LEGAL ENTITY FOOTER CARD */}
               <div id="sec-contact" className="terms-contact-card">
                 <div>
-                  <strong>Capital Services Pty Ltd</strong> &bull; ABN 48 613 317 838
+                  <strong>Capital Services Pty Ltd trading as Staffoo</strong> &bull; ABN 48 613 317 838
                   <br />
                   21 Tanglewood Bvd, Truganina VIC 3029, Australia
                 </div>

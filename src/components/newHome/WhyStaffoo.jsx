@@ -264,7 +264,7 @@ export default function WhyStaffoo() {
               </div>
               <div className="feature-row">
                 <dt>Pay securely</dt>
-                <dd>Funds are released once the job is confirmed complete.</dd>
+                <dd>Your payment is held until the job is confirmed complete. Pick Split Payment half taken at posting, half at sign-in or Full Payment, authorized at posting and charged at sign-in.</dd>
               </div>
             </dl>
             <Link to={postJobRoute} className="btn">Post your first job</Link>
@@ -285,16 +285,16 @@ export default function WhyStaffoo() {
                 <dd>Jobs are filtered to your license subclass and your location.</dd>
               </div>
               <div className="feature-row">
-                <dt>No commission taken</dt>
-                <dd>The rate posted by the client is exactly what you are paid.</dd>
+                <dt>Transparent Shifts</dt>
+                <dd>View accurate site details, required duties, and shift hours before you accept a deployment.</dd>
               </div>
               <div className="feature-row">
                 <dt>Apply in one tap</dt>
                 <dd>No phone calls, no waiting on a callback to hear back.</dd>
               </div>
               <div className="feature-row">
-                <dt>Paid every fortnight</dt>
-                <dd>Staffoo staff and resource partner are paid fortnightly, on a reliable pay cycle aligned with standard pay periods, at the agreed contracted rates.</dd>
+                <dt>Award Compliant Wages</dt>
+                <dd>All Staffoo Staff are paid strictly in accordance with Fair Work Award standards. All other Resource Partner staff are paid directly paid via there associate employer's as per there entitlements.</dd>
               </div>
             </dl>
             <Link to={findJobRoute} className="btn">Browse open jobs</Link>

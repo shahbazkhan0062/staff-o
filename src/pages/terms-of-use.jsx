@@ -574,7 +574,7 @@ export default function TermsOfUse() {
               {/* 9. Intellectual Property */}
               <section id="ip">
                 <h2>Intellectual property</h2>
-                <p>The Staffoo name, logo, website, and app are owned by Capital Services Pty Ltd. You may not copy, modify, or reuse them without our written permission. Content you submit, such as a job post or a profile detail, remains yours, but you give us permission to use it to operate and improve the platform.</p>
+                <p>The Staffoo name, logo, website, and app are owned by Capital Services Pty Ltd trading as Staffoo. You may not copy, modify, or reuse them without our written permission. Content you submit, such as a job post or a profile detail, remains yours, but you give us permission to use it to operate and improve the platform.</p>
               </section>
 
               {/* 10. Governing Law */}

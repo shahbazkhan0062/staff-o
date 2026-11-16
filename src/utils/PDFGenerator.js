@@ -49,7 +49,7 @@ const renderFormHeader = (doc, pageWidth, title, margin = 20) => {
 
   doc.setFontSize(7); doc.setFont("helvetica", "normal");
   const rx = pageWidth - margin;
-  doc.text("Capital Services Pty Ltd  |  ABN: 48 613 317 838", rx, barTop + 9, { align: "right" });
+  doc.text("Capital Services Pty Ltd trading as Staffoo  |  ABN: 48 613 317 838", rx, barTop + 9, { align: "right" });
   doc.text("21 Tanglewood Blvd, Truganina VIC 3029  |  admin@staffoo.com.au", rx, barTop + 14, { align: "right" });
 
   const titleY = barH + 12;
@@ -91,14 +91,159 @@ const checkbox = (doc, x, y, size = 3.5, ticked = false) => {
   doc.line(x + size * 0.43, y + size * 0.78, x + size * 0.82, y + size * 0.24);
 };
 
+// ─── Signature-image helpers ──────────────────────────────
+// A saved signature can be either a typed name (plain text) or an uploaded
+// signature-pad image (a URL / path ending in an image extension). This
+// detects the latter so the PDF can embed the actual image instead of the
+// raw URL string.
+const isImageSignature = (value) => {
+  if (!value || typeof value !== "string") return false;
+  return /^https?:\/\//i.test(value.trim()) && /\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(value.trim());
+};
+
+// Signature-pad canvases are usually saved at a fixed size with a lot of
+// blank space around the actual stroke, which makes the embedded image look
+// tiny even when it's scaled to fill the signature box. This trims the
+// transparent/near-white border down to the ink itself (with a small
+// padding) so the signature fills the available space. A data: URI is
+// always same-origin for canvas purposes, so getImageData never throws here
+// regardless of where the original image came from.
+const prepareSignatureImage = (src) =>
+  new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+
+          const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          let minX = width, minY = height, maxX = -1, maxY = -1;
+          for (let yy = 0; yy < height; yy++) {
+            for (let xx = 0; xx < width; xx++) {
+              const i = (yy * width + xx) * 4;
+              const a = data[i + 3];
+              if (a < 10) continue; // transparent background
+              const r = data[i], g = data[i + 1], b = data[i + 2];
+              if (r > 240 && g > 240 && b > 240) continue; // near-white background
+              if (xx < minX) minX = xx;
+              if (xx > maxX) maxX = xx;
+              if (yy < minY) minY = yy;
+              if (yy > maxY) maxY = yy;
+            }
+          }
+
+          if (maxX < minX || maxY < minY) {
+            // Nothing detected (blank canvas) — use the image as-is.
+            resolve({ dataUrl: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height });
+            return;
+          }
+
+          const pad = Math.round(Math.max(width, height) * 0.04);
+          minX = Math.max(0, minX - pad);
+          minY = Math.max(0, minY - pad);
+          maxX = Math.min(width - 1, maxX + pad);
+          maxY = Math.min(height - 1, maxY + pad);
+
+          const cw = maxX - minX + 1, ch = maxY - minY + 1;
+          const cropped = document.createElement("canvas");
+          cropped.width = cw; cropped.height = ch;
+          cropped.getContext("2d").drawImage(canvas, minX, minY, cw, ch, 0, 0, cw, ch);
+
+          resolve({ dataUrl: cropped.toDataURL("image/png"), width: cw, height: ch });
+        } catch (e) {
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    } catch (e) {
+      resolve(null);
+    }
+  });
+
+// Best-effort direct fetch of a remote signature image. This only succeeds
+// when the host serving the file sends CORS headers (most static-file hosts
+// used for uploaded documents don't), so it's kept purely as a fallback —
+// the reliable path is the pre-fetched `imageDataUrl` passed in from the
+// component (fetched through an authenticated, CORS-enabled API endpoint).
+const loadImageAsDataURL = (url) =>
+  new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          resolve({
+            dataUrl: canvas.toDataURL("image/png"),
+            width: canvas.width,
+            height: canvas.height,
+          });
+        } catch (e) {
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = url;
+    } catch (e) {
+      resolve(null);
+    }
+  });
+
+// Renders a signature into a fx..fx+fw / fy-ish box: an embedded image when
+// the signature is an uploaded signature-pad image, otherwise the typed name
+// as italic text (previous behaviour, unchanged).
+//
+// `imageDataUrl` — an already-fetched data: URI for the signature image
+// (preferred: the component fetches it through an authenticated endpoint so
+// it isn't blocked by the file host's missing CORS headers).
+const renderSignature = async (doc, signature, imageDataUrl, x, y, maxW, maxH = 10) => {
+  if (!signature && !imageDataUrl) return;
+
+  let rawDataUrl = null;
+  if (imageDataUrl) {
+    rawDataUrl = imageDataUrl;
+  } else if (isImageSignature(signature)) {
+    const fetched = await loadImageAsDataURL(signature);
+    if (fetched) rawDataUrl = fetched.dataUrl;
+  }
+
+  const img = rawDataUrl ? await prepareSignatureImage(rawDataUrl) : null;
+
+  if (img) {
+    const ratio = img.width / img.height;
+    let w = maxW, h = w / ratio;
+    if (h > maxH) { h = maxH; w = h * ratio; }
+    try {
+      doc.addImage(img.dataUrl, "PNG", x, y - h + 1, w, h);
+      return;
+    } catch (e) {
+      // fall through below
+    }
+  }
+
+  if (signature && !isImageSignature(signature)) {
+    doc.setFont("helvetica", "italic"); doc.setFontSize(10); doc.setTextColor(...T.text);
+    doc.text(String(signature), x, y);
+  }
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  1.  TAX FILE NUMBER DECLARATION
 // ─────────────────────────────────────────────────────────────────────────────
-const generateTFNDeclarationPDF = (formData) => {
+const generateTFNDeclarationPDF = async (formData) => {
   // Accepts full_name OR first_name+surname; full_name takes precedence.
   const {
     tfn, title, full_name, first_name, surname, previous_name, dob, address, basis_of_payment,
-    australian_resident, claim_threshold, help_debt, signature, signed_date, date,
+    australian_resident, claim_threshold, help_debt, signature, signature_image, signed_date, date,
   } = formData;
 
   const name = full_name || `${first_name || ""} ${surname || ""}`.trim();
@@ -171,12 +316,7 @@ const generateTFNDeclarationPDF = (formData) => {
 
   y += 10;
   doc.setDrawColor(...T.text); doc.setLineWidth(0.5); doc.line(mg, y, mg + 75, y);
-  if (signature) {
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(10);
-    doc.setTextColor(...T.text);
-    doc.text(String(signature), mg + 1, y - 2);
-  }
+  await renderSignature(doc, signature, signature_image, mg + 1, y - 2, 70, 9);
   y += 4;
   doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...T.text);
   doc.text("Employee Signature", mg, y);
@@ -193,9 +333,9 @@ const generateTFNDeclarationPDF = (formData) => {
 // ─────────────────────────────────────────────────────────────────────────────
 //  2.  SUPERANNUATION STANDARD CHOICE FORM
 // ─────────────────────────────────────────────────────────────────────────────
-const generateSuperannuationPDF = (formData) => {
+const generateSuperannuationPDF = async (formData) => {
   const {
-    full_name, employee_number, fund_choice, fund_name, fund_abn, fund_usi, member_account, signature, signed_date,
+    full_name, employee_number, fund_choice, fund_name, fund_abn, fund_usi, member_account, signature, signature_image, signed_date,
   } = formData;
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
@@ -269,12 +409,7 @@ const generateSuperannuationPDF = (formData) => {
   y += 60;
 
   doc.setDrawColor(...T.text); doc.setLineWidth(0.5); doc.line(mg, y, mg + 75, y);
-  if (signature) {
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(10);
-    doc.setTextColor(...T.text);
-    doc.text(String(signature), mg + 1, y - 2);
-  }
+  await renderSignature(doc, signature, signature_image, mg + 1, y - 2, 70, 9);
   y += 4;
   doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...T.text);
   doc.text("Employee Signature", mg, y);
@@ -291,12 +426,14 @@ const generateSuperannuationPDF = (formData) => {
 // ─────────────────────────────────────────────────────────────────────────────
 //  3.  EMPLOYEE ONBOARDING & ID VERIFICATION FORM
 // ─────────────────────────────────────────────────────────────────────────────
-const generateEmployeeOnboardingPDF = (formData) => {
+const generateEmployeeOnboardingPDF = async (formData) => {
   const {
     full_name, dob, address, mobile, email, passport_number, passport_country, passport_expiry, work_rights,
     visa_type, id_checks, bank_name, bsb, account_number, tfn, super_fund, super_usi, super_member,
-    security_license, security_license_expiry, first_aid_cert, first_aid_expiry, signature, signed_date,
-    chk_primary, chk_driver, chk_security, chk_medicare
+    security_license, security_license_expiry, first_aid_cert, first_aid_expiry, signature, signature_image, signed_date,
+    chk_primary, chk_driver, chk_security, chk_medicare,
+    medical_history, medical_history_details, criminal_history, criminal_history_details, work_experience,
+    resume_doc
   } = formData;
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
@@ -456,6 +593,33 @@ const generateEmployeeOnboardingPDF = (formData) => {
   twoFld("Security License No:", security_license, "Security License Expiry:", security_license_expiry);
   twoFld("First Aid Certificate No:", first_aid_cert, "First Aid Expiry:", first_aid_expiry);
 
+  const textBlock = (label, value, minH = 13) => {
+    const lines = doc.splitTextToSize(String(value || "—"), bw);
+    const blockH = Math.max(minH, 7 + lines.length * 4);
+    checkPage(blockH);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(...T.text);
+    doc.text(label, mg, y);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...T.text);
+    doc.text(lines, mg, y + 5.5);
+    doc.setDrawColor(...T.lineGray); doc.setLineWidth(0.3);
+    doc.line(mg, y + blockH - 1, mg + bw, y + blockH - 1);
+    y += blockH;
+  };
+
+  section("6. MEDICAL HISTORY");
+  const medicalYes = String(medical_history || "").toLowerCase() === "yes";
+  twoFld("Relevant Medical Condition:", medicalYes ? "Yes" : "No", "", "");
+  if (medicalYes) textBlock("Medical History Details:", medical_history_details);
+
+  section("7. CRIMINAL HISTORY");
+  const criminalYes = String(criminal_history || "").toLowerCase() === "yes";
+  twoFld("Criminal Convictions on Record:", criminalYes ? "Yes" : "No", "", "");
+  if (criminalYes) textBlock("Criminal History Details:", criminal_history_details);
+
+  section("8. WORK EXPERIENCE");
+  textBlock("Relevant Work Experience:", work_experience);
+  twoFld("Resume / CV Attached:", resume_doc ? "Yes" : "No", "", "");
+
   checkPage(25);
   y += 2;
 
@@ -479,12 +643,7 @@ const generateEmployeeOnboardingPDF = (formData) => {
   doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(...T.text);
   doc.text("Signature:", mg, y);
   doc.setDrawColor(...T.lineGray); doc.setLineWidth(0.3); doc.line(mg, y + 7, mg + sigHw, y + 7);
-  if (signature) {
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(10);
-    doc.setTextColor(...T.text);
-    doc.text(String(signature), mg + 2, y + 5);
-  }
+  await renderSignature(doc, signature, signature_image, mg + 2, y + 5, sigHw - 4, 6);
 
   const displayDate = formatDateForDisplay(signed_date);
   doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(...T.text);
@@ -562,6 +721,7 @@ const PDFGenerator = {
   generateTFNDeclarationPDF,
   generateSuperannuationPDF,
   generateEmployeeOnboardingPDF,
+  isImageSignature,
 
   generateInvoicePDF: (invoiceData) => {
     const {

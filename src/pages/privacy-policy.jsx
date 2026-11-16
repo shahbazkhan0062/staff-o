@@ -450,7 +450,7 @@ export default function PrivacyPolicy() {
             <span className="eyebrow-pill">Privacy Policy</span>
             <h1 style={{ fontSize: "48px" }}>How we handle <span style={{ color: "#0a7c6e" }}> your information</span></h1>
             <p className="intro">
-              This policy explains what personal information Staffoo collects from clients, security staff, and resource partners, why we collect it, and how we keep it safe. Staffoo is operated by Capital Services Pty Ltd, ABN 48 613 317 838.
+              This policy explains what personal information Staffoo collects from clients, security staff, and resource partners, why we collect it, and how we keep it safe. Staffoo is operated by Capital Services Pty Ltd trading as Staffoo, ABN 48 613 317 838.
             </p>
           </div>
 

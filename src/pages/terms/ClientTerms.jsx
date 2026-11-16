@@ -51,7 +51,7 @@ export default function ClientTerms() {
         <title>Client Terms of Service and Booking Agreement | Staffoo</title>
         <meta
           name="description"
-          content="Staffoo Customer Terms of Service and Booking Agreement operated by Capital Services Pty Ltd (ABN 48 613 317 838)."
+          content="Staffoo Customer Terms of Service and Booking Agreement operated by Capital Services Pty Ltd trading as Staffoo (ABN 48 613 317 838)."
         />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
@@ -96,7 +96,7 @@ export default function ClientTerms() {
                 </h2>
 
                 <p className="terms-hero-desc">
-                  Operated by <strong>Capital Services Pty Ltd</strong> (ABN 48 613 317 838).
+                  Operated by <strong>Capital Services Pty Ltd trading as Staffoo</strong> (ABN 48 613 317 838).
                   These Terms govern the access to and use of the Staffoo web dashboard, mobile applications,
                   and booking infrastructure by Clients requesting and managing security personnel.
                 </p>
@@ -182,7 +182,7 @@ export default function ClientTerms() {
                       1.2 Absolute Discretion to Fulfill via Resource Partners
                     </h4>
                     <p className="terms-paragraph">
-                      The Client acknowledges and agrees that Capital Services Pty Ltd reserves the absolute right and discretion at all times to fulfill any booking requirement either directly or by engaging, assigning, or subcontracting the shift to an independent, licensed third-party security provider or staffing agency (&quot;<strong>Resource Partner</strong>&quot;).
+                      The Client acknowledges and agrees that Capital Services Pty Ltd trading as Staffoo reserves the absolute right and discretion at all times to fulfill any booking requirement either directly or by engaging, assigning, or subcontracting the shift to an independent, licensed third-party security provider or staffing agency (&quot;<strong>Resource Partner</strong>&quot;).
                     </p>
                   </div>
 
@@ -191,12 +191,12 @@ export default function ClientTerms() {
                       1.3 Jurisdictional and License Capacity Disclaimer
                     </h4>
                     <p className="terms-paragraph" style={{ marginBottom: "10px" }}>
-                      The existence or holding of a Master Security License or Labour Hire License by Capital Services Pty Ltd in any specific State or Territory shall not obligate Capital Services Pty Ltd to act as the principal direct service provider:
+                      The existence or holding of a Master Security License or Labour Hire License by Capital Services Pty Ltd trading as Staffoo in any specific State or Territory shall not obligate Capital Services Pty Ltd to act as the principal direct service provider:
                     </p>
                     <ul className="terms-list">
-                      <li>Capital Services Pty Ltd may assign bookings to an authorized, fully licensed Resource Partner.</li>
+                      <li>Capital Services Pty Ltd trading as Staffoo may assign bookings to an authorized, fully licensed Resource Partner.</li>
                       <li>Where assigned to a Resource Partner, on-site security execution is governed by the Resource Partner, and Staffoo acts as technology platform and billing agent.</li>
-                      <li>The Client shall not hold Capital Services Pty Ltd liable for exercising its commercial right to utilize Resource Partners.</li>
+                      <li>The Client shall not hold Capital Services Pty Ltd trading as Staffoo liable for exercising its commercial right to utilize Resource Partners.</li>
                     </ul>
                   </div>
                 </div>
@@ -399,7 +399,7 @@ export default function ClientTerms() {
               {/* LEGAL ENTITY CONTACT DETAILS */}
               <div id="client-sec-contact" className="terms-contact-card">
                 <div>
-                  <strong>Capital Services Pty Ltd</strong> &bull; ABN 48 613 317 838
+                  <strong>Capital Services Pty Ltd trading as Staffoo</strong> &bull; ABN 48 613 317 838
                   <br />
                   21 Tanglewood Bvd, Truganina VIC 3029, Australia
                 </div>

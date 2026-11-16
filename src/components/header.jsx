@@ -207,10 +207,13 @@ const Header = memo(function Header({ withSidebar = false }) {
           <div className="hdr-right">
             {token && (
               <div className="hdr-actions">
-                {/* Go back to the public website */}
-                <NavLink to="/" className="hdr-site-link">
+                {/* Go back to the public website — compact icon button
+                    (not a text+icon button) so it never competes for
+                    width with the center nav links at mid-size viewports.
+                    A labelled entry also sits at the top of the user
+                    menu below for discoverability. */}
+                <NavLink to="/" className="hdr-site-icon-btn" title="Go to Website" aria-label="Go to Website">
                   <i className="fa-solid fa-arrow-up-right-from-square"></i>
-                  Go to Website
                 </NavLink>
 
                 {/* Notification Bell */}
@@ -322,6 +325,13 @@ const Header = memo(function Header({ withSidebar = false }) {
                       >
                         <i className="fa-solid fa-user"></i> My Profile
                       </NavLink>
+                      <NavLink
+                        className="hdr-user-menu-item"
+                        to="/"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        <i className="fa-solid fa-arrow-up-right-from-square"></i> Visit Website
+                      </NavLink>
                       <div className="hdr-user-menu-divider"></div>
                       <button className="hdr-user-menu-item danger" onClick={handleLogoutClick}>
                         <i className="fa-solid fa-right-from-bracket"></i> Logout
@@ -368,11 +378,15 @@ const Header = memo(function Header({ withSidebar = false }) {
 
         .hdr-root { position: relative; }
         .hdr-bar {
-          background: #ffffff;
+          position: sticky;
+          top: 0;
+          z-index: 500;
+          background: rgba(255, 255, 255, 0.85);
+          backdrop-filter: blur(14px) saturate(180%);
+          -webkit-backdrop-filter: blur(14px) saturate(180%);
           border-bottom: 1px solid var(--hdr-line);
           box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
           transition: padding-left 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-          position: relative;
         }
         .hdr-bar::after {
           content: "";
@@ -381,18 +395,23 @@ const Header = memo(function Header({ withSidebar = false }) {
           opacity: 0.85;
         }
 
+        /* Three-zone grid (logo / nav / actions) instead of flex +
+           absolute-centering. Each zone keeps its own column, so the
+           center nav can never be rendered on top of the right-hand
+           action cluster, however wide that cluster gets (notification
+           bell, tasks bell, avatar + name, etc.) — this is what caused
+           "About us" to sit under the old "Go to Website" button. */
         .hdr-container {
           max-width: 1320px;
           margin: 0 auto;
           padding: 14px 24px;
-          display: flex;
+          display: grid;
+          grid-template-columns: auto 1fr auto;
           align-items: center;
-          justify-content: space-between;
           gap: 20px;
-          position: relative;
         }
 
-        .hdr-left { flex: 0 0 auto; display: flex; align-items: center; }
+        .hdr-left { display: flex; align-items: center; min-width: 0; }
         .hdr-logo-link { display: flex; align-items: center; text-decoration: none; transition: transform 0.15s; }
         .hdr-logo-link:hover { transform: translateY(-1px); }
         .hdr-logo-img { height: 42px; display: block; }
@@ -404,10 +423,9 @@ const Header = memo(function Header({ withSidebar = false }) {
           .hdr-center {
             display: flex;
             align-items: center;
+            justify-content: center;
             gap: 2rem;
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
+            min-width: 0;
           }
           .hdr-nav-link {
             text-decoration: none;
@@ -434,30 +452,30 @@ const Header = memo(function Header({ withSidebar = false }) {
           .hdr-nav-link.active::after { transform: scaleX(1); }
         }
 
-        .hdr-right { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
+        .hdr-right { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
         .hdr-actions { display: flex; align-items: center; gap: 18px; }
         @media (max-width: 1199px) {
           .hdr-actions { display: none; }
         }
 
-        /* "Go to Website" CTA — desktop. Flat solid style, matching the
-           "Go to Dashboard" button on the public site header exactly
-           (same color, padding, radius, no gradient/glow) so the two
-           headers read as one consistent design. */
-        .hdr-site-link {
-          display: flex; align-items: center; gap: 7px;
-          padding: 10px 16px; border-radius: 9px;
-          background: var(--hdr-teal);
-          color: #fff; font-weight: 600; font-size: 14px;
-          text-decoration: none; white-space: nowrap;
-          border: 1.5px solid var(--hdr-teal);
-          transition: background 0.15s, border-color 0.15s;
+        /* "Go to Website" — compact icon button (replaces the old
+           text+icon button). A circular icon-only control takes a fixed
+           38px regardless of viewport width, so it can never collide
+           with the center nav links the way a growing text button did.
+           Same treatment is reused for the mobile-only fallback below,
+           and the same destination is also offered as a labelled item
+           inside the user menu for anyone who prefers that. */
+        .hdr-site-icon-btn {
+          width: 38px; height: 38px; border-radius: 10px;
+          display: flex; align-items: center; justify-content: center;
+          background: var(--hdr-teal-tint); border: 1px solid var(--hdr-teal-border);
+          color: var(--hdr-teal); font-size: 14px; text-decoration: none;
+          transition: background 0.15s, border-color 0.15s, color 0.15s;
         }
-        .hdr-site-link i { font-size: 12.5px; }
-        .hdr-site-link:hover {
+        .hdr-site-icon-btn:hover {
+          background: var(--hdr-teal);
+          border-color: var(--hdr-teal);
           color: #fff;
-          background: var(--hdr-teal-dark);
-          border-color: var(--hdr-teal-dark);
         }
 
         /* "Go to Website" — compact mobile icon button */
