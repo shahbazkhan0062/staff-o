@@ -84,9 +84,13 @@ class EmployeeAgreementService
 
     private function signatureBlockHtml(string $title, ?string $name, ?string $imageBase64, ?string $signedAt, string $roleNote = ''): string
     {
+        // NOTE: returns just the inner content — the caller wraps this in a
+        // <td class="sign-col"> table cell (see buildHtml()), not a <div>.
+        // dompdf mis-paginates an inline-block box with page-break-inside:
+        // avoid (it can render a solid black bar where the page splits);
+        // a table cell paginates cleanly, so the box is never cut in half.
         $isSigned = !empty($name) || !empty($imageBase64);
-        $html = "<div class='sign-col'>";
-        $html .= "<div class='sign-subtitle'>{$title}</div>";
+        $html = "<div class='sign-subtitle'>{$title}</div>";
         if ($roleNote) {
             $html .= "<div class='sign-role-note'>{$roleNote}</div>";
         }
@@ -106,7 +110,6 @@ class EmployeeAgreementService
             $html .= "<div class='sign-row'><span class='sign-label'>Name:</span><span class='unsigned-line-inline'></span></div>";
             $html .= "<div class='sign-row'><span class='sign-label'>Date:</span><span class='unsigned-line-inline'></span></div>";
         }
-        $html .= "</div>";
         return $html;
     }
 
@@ -356,10 +359,17 @@ class EmployeeAgreementService
         .notice-table th { background:#0A7C6E; color:#fff; padding: 5px 8px; text-align:left; font-size: 8.6px; }
         .notice-table td { border: 1px solid #e2e8f0; padding: 5px 8px; }
         .notice-table-footnote { font-size: 8px; color:#6B7280; margin: 2px 0 10px; }
-        .sign-section { margin-top: 16px; }
-        .sign-cols { width:100%; }
-        .sign-col { display:inline-block; width:48%; vertical-align:top; padding: 10px; border:1px solid #d1d5db; border-radius:6px; }
-        .sign-col + .sign-col { margin-left: 3%; }
+        /* dompdf does not reliably honor page-break-inside: avoid on a block
+           or table placed near a page boundary -- in practice it can still
+           split the row and render a solid black fill at the cut (a known
+           dompdf rendering bug, made worse by border-radius on the split
+           cell). The fix dompdf honors consistently is forcing this whole
+           block onto a fresh page, so it is never a candidate for a mid-box
+           split in the first place. */
+        .execution-block { page-break-before: always; page-break-inside: avoid; padding-top: 4px; }
+        .sign-section { margin-top: 16px; width: 100%; border-collapse: separate; border-spacing: 0; page-break-inside: avoid; }
+        .sign-col { width:48.5%; vertical-align:top; padding: 10px; border:1px solid #d1d5db; }
+        .sign-spacer { width:3%; }
         .sign-subtitle { font-weight:bold; font-size:10px; margin-bottom:6px; }
         .sign-role-note { font-size:8.5px; color:#6B7280; margin-bottom: 6px; }
         .sign-row { font-size:9px; margin-top:4px; }
@@ -424,7 +434,11 @@ class EmployeeAgreementService
         $html .= "<p>By signing below, the Employee acknowledges that they have read, understood, and accepted all terms, conditions, and schedules of this Employment Agreement, "
                . "including the requirement to maintain active licensing, comply with WHS policies, and utilize the Staffoo Mobile Application for shift management.</p>";
 
-        $html .= "<div class='sign-section'>{$employeeSigHtml}{$employerSigHtml}</div>";
+        $html .= "<table class='sign-section'><tr>"
+               . "<td class='sign-col'>{$employeeSigHtml}</td>"
+               . "<td class='sign-spacer'></td>"
+               . "<td class='sign-col'>{$employerSigHtml}</td>"
+               . "</tr></table>";
         $html .= "</div>";
 
         $html .= "<div class='footer'>Staffoo (Capital Services Pty Ltd) — ABN 48 613 317 838 — Agreement {$agreementNumber}</div>";
