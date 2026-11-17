@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\RetellIdentityController;
 use App\Http\Controllers\Api\RetellAccountController;
 use App\Http\Controllers\Api\Admin\NotificationSettingsController;
 use App\Http\Controllers\Api\Admin\AdminTaskController;
+use App\Http\Controllers\Api\EmployeeAgreementController;
 
 /*
 |--------------------------------------------------------------------------
@@ -47,7 +48,29 @@ use App\Http\Controllers\Api\Admin\AdminTaskController;
 | be assigned to the "api" middleware group. Make something great!
 |
 */
+/**
+ * ADD TO routes/api.php
+ *
+ * Placement mirrors the existing contract-sign routes (public, token-based,
+ * no auth middleware — matches `contracts/sign/{token}` at the top of the
+ * file) plus an authenticated admin group (matches the existing
+ * `admin/...` group further down where ContractorController is registered).
+ */
 
+
+// ---- PUBLIC: employee opens the emailed link on their phone ----
+// (place alongside the existing `contracts/sign/{token}` lines ~68-69)
+Route::get('employment-agreement/sign/{token}', [EmployeeAgreementController::class, 'getByToken']);
+Route::post('employment-agreement/sign/{token}', [EmployeeAgreementController::class, 'sign']);
+
+// ---- ADMIN (inside the existing authenticated `admin` middleware group,
+// alongside the ContractorController routes around line 360) ----
+Route::get('admin/employment-agreements', [EmployeeAgreementController::class, 'index']);
+Route::get('admin/staff/{userId}/employment-agreement/prefill', [EmployeeAgreementController::class, 'prefill']);
+Route::post('admin/staff/{userId}/employment-agreement', [EmployeeAgreementController::class, 'store']);
+Route::post('admin/employment-agreement/{id}/countersign', [EmployeeAgreementController::class, 'counterSign']);
+Route::post('admin/employment-agreement/{id}/resend', [EmployeeAgreementController::class, 'resend']);
+Route::post('admin/employment-agreement/statutory-documents', [EmployeeAgreementController::class, 'uploadStatutoryDocuments']);
 // Twilio posts here on every inbound WhatsApp message.
 // Set this URL in Twilio Console > Messaging > your WhatsApp sender >
 // "When a message comes in".

@@ -23,7 +23,16 @@ class Staff extends Model
         'current_coordinates',
         'origin_country',
         'is_control_room_license',
+        'employment_type',
+        'classification_level',
+        'guaranteed_hours',
+        'commencement_date',
     ];
+
+    public function employeeAgreements()
+    {
+        return $this->hasMany(EmployeeAgreement::class, 'staff_id');
+    }
 
     /* ======================
         RELATIONS
