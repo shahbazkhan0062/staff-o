@@ -119,7 +119,10 @@ class EmployeeAgreementController extends Controller
         $payload = array_merge($snapshot, [
             'staff_id'   => $staff->id,
             'user_id'    => $userId,
-            'created_by' => auth()->id(),
+            // Matches the existing admin-write pattern used elsewhere in this app
+            // (JobRosterController etc.) — auth()->id() can come back null on
+            // these admin routes, so fall back to an explicit admin_id param.
+            'created_by' => auth()->id() ?? $request->input('admin_id'),
             'agreement_number' => $agreementNumber,
             'schedule1_snapshot' => $snapshot,
             'fwis_attached' => true,
@@ -346,7 +349,7 @@ class EmployeeAgreementController extends Controller
             'employer_signature_name'       => $request->signature_name,
             'employer_signature_image_path' => 'employee-agreements/signatures/' . $signatureFilename,
             'employer_signed_at'            => $signedAt,
-            'employer_signed_by'            => auth()->id(),
+            'employer_signed_by'            => auth()->id() ?? $request->input('admin_id'),
             'employer_signed_ip'            => $request->ip(),
         ]);
 
