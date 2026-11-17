@@ -15,18 +15,40 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
+/**
+ * REVISED FLOW (per updated requirements):
+ *
+ *  1. Admin clicks "Send Employment Agreement" for a staff member — no form,
+ *     nothing to fill in. send() auto-fills Schedule 1 entirely from
+ *     Onboarding/User/Staff and defaults employment_type to "casual". The
+ *     agreement + signing link is emailed straight to the employee.
+ *  2. Employee opens the link. Every field is read-only EXCEPT Employment
+ *     Category (defaults to Casual, selectable) and Classification Level.
+ *     If they switch to Part-Time, they also set Guaranteed Hours (Fair
+ *     Work Act requires it for Part-Time).
+ *  3. Employee signs & submits -> sign() locks in whichever employment_type/
+ *     classification_level/guaranteed_hours they picked, regenerates the
+ *     PDF with their signature, and emails a copy (with the PDF attached)
+ *     to the admin. Status -> employee_signed.
+ *  4. Admin opens the agreement in the admin portal and countersigns ->
+ *     counterSign() produces the fully executed PDF and emails it to BOTH
+ *     the employee and the admin, with FWIS (+ CEIS if casual) attached.
+ *  5. Admin can see every agreement, and open the signed PDF, from the
+ *     admin portal list (index()).
+ */
 class EmployeeAgreementController extends Controller
 {
+    private const DEFAULT_EMPLOYMENT_TYPE = 'casual';
+    private const DEFAULT_CLASSIFICATION_LEVEL = 1;
+
     /**
-     * STEP 0 — Admin opens "Send Employment Agreement" for a guard. Returns
-     * everything we can already auto-fill for Schedule 1 from data the guard
-     * entered during registration/onboarding, so HR only has to key in the
-     * handful of fields that genuinely don't exist anywhere yet (employment
-     * category, classification level, guaranteed hours, commencement date).
+     * STEP 1 — Admin triggers this for a staff member. No request body
+     * needed — everything is auto-filled; the employee makes the two calls
+     * (employment type / classification) themselves when they sign.
      *
-     * GET /admin/staff/{userId}/employment-agreement/prefill
+     * POST /admin/staff/{userId}/employment-agreement/send
      */
-    public function prefill($userId)
+    public function send(Request $request, $userId)
     {
         $user = User::find($userId);
         $staff = Staff::where('user_id', $userId)->first();
@@ -36,84 +58,52 @@ class EmployeeAgreementController extends Controller
             return response()->json(['success' => false, 'message' => 'Staff member not found.'], 200);
         }
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                // Auto-filled — editable by HR before sending, but pre-populated
-                // from registration/onboarding so nobody re-types it.
-                'employee_name'    => $onboarding->full_name ?? $user->name,
-                'employee_address' => $onboarding->address ?? $user->address,
-                'employee_phone'   => $onboarding->mobile ?? $staff->phone ?? $user->phone,
-                'employee_email'   => $onboarding->email ?? $user->email,
-                'security_license_no' => $onboarding->security_license ?? $staff->security_license_no,
+        $employeeName    = $onboarding->full_name ?? $user->name;
+        $employeeAddress = $onboarding->address ?? $user->address;
+        $employeePhone   = $onboarding->mobile ?? $staff->phone ?? $user->phone;
+        $employeeEmail   = $onboarding->email ?? $user->email;
+        $licenseNo       = $onboarding->security_license ?? $staff->security_license_no;
 
-                // Previously saved values, if this is a re-issue (e.g. the
-                // employee moved from Casual to Part-Time) — otherwise null
-                // and HR fills them in for the first time.
-                'employment_type'      => $staff->employment_type,
-                'classification_level' => $staff->classification_level,
-                'guaranteed_hours'     => $staff->guaranteed_hours,
-                'commencement_date'    => $staff->commencement_date,
-
-                'existing_agreement' => EmployeeAgreement::where('staff_id', $staff->id)
-                    ->orderByDesc('created_at')->first(),
-            ],
-        ], 200);
-    }
-
-    /**
-     * STEP 1 — Admin submits the completed Schedule 1 (auto-filled fields +
-     * the ones they just keyed in) for a given staff member. Generates the
-     * unsigned agreement PDF and emails the signing link to the employee.
-     *
-     * POST /admin/staff/{userId}/employment-agreement
-     * Body: {
-     *   employee_name, employee_address, employee_phone, employee_email,
-     *   employment_type: full_time|part_time|casual,
-     *   classification_level: 1-5,
-     *   security_license_no,
-     *   guaranteed_hours (required if employment_type = part_time),
-     *   commencement_date (YYYY-MM-DD)
-     * }
-     */
-    public function store(Request $request, $userId)
-    {
-        $staff = Staff::where('user_id', $userId)->first();
-        if (!$staff) {
-            return response()->json(['success' => false, 'message' => 'Staff member not found.'], 200);
+        if (empty($employeeEmail)) {
+            return response()->json(['success' => false, 'message' => 'This staff member has no email on file — cannot send the agreement.'], 200);
         }
 
-        $validated = $request->validate([
-            'employee_name'        => 'required|string|max:200',
-            'employee_address'     => 'nullable|string|max:255',
-            'employee_phone'       => 'nullable|string|max:30',
-            'employee_email'       => 'nullable|email|max:150',
-            'employment_type'      => 'required|in:full_time,part_time,casual',
-            'classification_level' => 'required|integer|min:1|max:5',
-            'security_license_no'  => 'nullable|string|max:50',
-            'guaranteed_hours'     => 'required_if:employment_type,part_time|nullable|string|max:100',
-            'commencement_date'    => 'required|date',
-        ]);
+        // Defaults — the employee changes these themselves on the signing
+        // page before they sign. Carry over whatever was set last time
+        // (re-issue case) rather than always resetting to the default.
+        $employmentType      = $staff->employment_type ?: self::DEFAULT_EMPLOYMENT_TYPE;
+        $classificationLevel = $staff->classification_level ?: self::DEFAULT_CLASSIFICATION_LEVEL;
+        $guaranteedHours     = $staff->guaranteed_hours;
+        $commencementDate    = $staff->commencement_date ?: now()->format('Y-m-d');
 
-        // Keep Staff (the canonical, current record) in sync — rostering/
-        // payroll reads these columns going forward.
-        $staff->update([
-            'employment_type'      => $validated['employment_type'],
-            'classification_level' => $validated['classification_level'],
-            'guaranteed_hours'      => $validated['guaranteed_hours'] ?? null,
-            'commencement_date'     => $validated['commencement_date'],
-            'security_license_no'   => $validated['security_license_no'] ?? $staff->security_license_no,
-        ]);
+        // Reuse the existing pending agreement for this staff member instead
+        // of minting a new one every time admin clicks "send" (e.g. resend
+        // after the employee lost the email) — mirrors the `contracts`
+        // table convention of one live record per party.
+        $existing = EmployeeAgreement::where('staff_id', $staff->id)
+            ->where('status', 'pending_signature')
+            ->first();
 
-        $isCasual = $validated['employment_type'] === 'casual';
-        $agreementNumber = 'EMP-AGR-' . strtoupper(Str::random(8));
-        $signingToken = Str::random(48);
+        $agreementNumber = $existing->agreement_number ?? ('EMP-AGR-' . strtoupper(Str::random(8)));
+        $signingToken = $existing->signing_token ?? Str::random(48);
 
-        $pdfData = array_merge($validated, [
+        $snapshot = [
+            'employee_name'    => $employeeName,
+            'employee_address' => $employeeAddress,
+            'employee_phone'   => $employeePhone,
+            'employee_email'   => $employeeEmail,
+            'security_license_no' => $licenseNo,
+            'employment_type'      => $employmentType,
+            'classification_level' => $classificationLevel,
+            'guaranteed_hours'      => $guaranteedHours,
+            'commencement_date'     => $commencementDate,
+        ];
+
+        $pdfData = array_merge($snapshot, [
             'agreement_number' => $agreementNumber,
             'date'             => now()->format('d M Y'),
             'fwis_attached'    => true,
-            'ceis_attached'    => $isCasual,
+            'ceis_attached'    => $employmentType === 'casual',
         ]);
 
         $service = new EmployeeAgreementService();
@@ -126,46 +116,40 @@ class EmployeeAgreementController extends Controller
         $filename = $agreementNumber . '.pdf';
         file_put_contents($directory . DIRECTORY_SEPARATOR . $filename, $pdfBytes);
 
-        $agreement = EmployeeAgreement::create([
+        $payload = array_merge($snapshot, [
             'staff_id'   => $staff->id,
             'user_id'    => $userId,
             'created_by' => auth()->id(),
             'agreement_number' => $agreementNumber,
-            'employee_name'    => $validated['employee_name'],
-            'employee_address' => $validated['employee_address'] ?? null,
-            'employee_phone'   => $validated['employee_phone'] ?? null,
-            'employee_email'   => $validated['employee_email'] ?? null,
-            'employment_type'      => $validated['employment_type'],
-            'classification_level' => $validated['classification_level'],
-            'security_license_no'  => $validated['security_license_no'] ?? null,
-            'guaranteed_hours'      => $validated['guaranteed_hours'] ?? null,
-            'commencement_date'     => $validated['commencement_date'],
-            'schedule1_snapshot' => $validated,
+            'schedule1_snapshot' => $snapshot,
             'fwis_attached' => true,
-            'ceis_attached' => $isCasual,
+            'ceis_attached' => $employmentType === 'casual',
             'pdf_path'      => 'employee-agreements/' . $filename,
             'signing_token' => $signingToken,
             'status'        => 'pending_signature',
         ]);
 
+        $agreement = $existing
+            ? tap($existing)->update($payload)
+            : EmployeeAgreement::create($payload);
+
         $signingLink = rtrim(config('app.frontend_url', config('app.url')), '/')
             . '/employment-agreement/sign?token=' . $signingToken;
 
-        if (!empty($validated['employee_email'])) {
-            try {
-                Mail::to($validated['employee_email'])->send(new EmployeeAgreementSignatureRequestMail(
-                    $validated['employee_name'],
-                    $agreementNumber,
-                    $signingLink
-                ));
-            } catch (\Exception $e) {
-                Log::error('Failed to send employment agreement signature request', ['error' => $e->getMessage()]);
-            }
+        try {
+            Mail::to($employeeEmail)->send(new EmployeeAgreementSignatureRequestMail(
+                $employeeName,
+                $agreementNumber,
+                $signingLink
+            ));
+        } catch (\Exception $e) {
+            Log::error('Failed to send employment agreement signature request', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Agreement generated but the email failed to send. Use Resend to try again.'], 200);
         }
 
         return response()->json([
             'success' => true,
-            'message' => 'Employment agreement generated and sent to the employee for signature.',
+            'message' => 'Employment agreement emailed to the employee for signature.',
             'data' => [
                 'agreement_id'     => $agreement->id,
                 'agreement_number' => $agreementNumber,
@@ -176,6 +160,10 @@ class EmployeeAgreementController extends Controller
 
     /**
      * STEP 2 — Employee opens the link on their phone. Public endpoint.
+     * Returns the read-only fields plus the current/default employment_type
+     * ("casual" on a first send) and classification_level, so the frontend
+     * can pre-select them in editable controls.
+     *
      * GET /employment-agreement/sign/{token}
      */
     public function getByToken($token)
@@ -191,8 +179,14 @@ class EmployeeAgreementController extends Controller
             'data' => [
                 'agreement_number'      => $agreement->agreement_number,
                 'employee_name'         => $agreement->employee_name,
-                'employment_type'       => $agreement->employment_type,
-                'classification_level'  => $agreement->classification_level,
+                'employee_address'      => $agreement->employee_address,
+                'employee_phone'        => $agreement->employee_phone,
+                'employee_email'        => $agreement->employee_email,
+                'security_license_no'   => $agreement->security_license_no,
+                // Editable by the employee before they sign:
+                'employment_type'       => $agreement->employment_type,      // default "casual"
+                'classification_level'  => $agreement->classification_level, // default 1
+                'guaranteed_hours'      => $agreement->guaranteed_hours,
                 'commencement_date'     => optional($agreement->commencement_date)->format('d M Y'),
                 'status'                => $agreement->status,
                 'pdf_url'               => $agreement->pdf_path ? asset('storage/' . $agreement->pdf_path) : null,
@@ -205,15 +199,26 @@ class EmployeeAgreementController extends Controller
     }
 
     /**
-     * STEP 3 — Employee submits their drawn/auto-generated signature.
+     * STEP 3 — Employee confirms employment_type + classification_level
+     * (and guaranteed_hours if Part-Time) and submits their signature.
+     * This is also where those fields get LOCKED IN for this agreement.
+     *
      * POST /employment-agreement/sign/{token}
-     * Body: { signature_name, signature_image (base64 data URI) }
+     * Body: {
+     *   signature_name, signature_image,
+     *   employment_type: full_time|part_time|casual,
+     *   classification_level: 1-5,
+     *   guaranteed_hours (required if employment_type = part_time)
+     * }
      */
     public function sign(Request $request, $token)
     {
-        $request->validate([
+        $validated = $request->validate([
             'signature_name'  => 'required|string|max:255',
             'signature_image' => 'required|string',
+            'employment_type'      => 'required|in:full_time,part_time,casual',
+            'classification_level' => 'required|integer|min:1|max:5',
+            'guaranteed_hours'      => 'required_if:employment_type,part_time|nullable|string|max:100',
         ]);
 
         $agreement = EmployeeAgreement::where('signing_token', $token)->first();
@@ -238,22 +243,46 @@ class EmployeeAgreementController extends Controller
         file_put_contents($signatureDirectory . DIRECTORY_SEPARATOR . $signatureFilename, $decodedImage);
 
         $signedAt = now();
+        $isCasual = $validated['employment_type'] === 'casual';
+
+        // Lock in whichever employment type / classification / guaranteed
+        // hours the employee picked, BEFORE regenerating the PDF, so the
+        // signed PDF reflects their actual choice.
+        $agreement->employment_type      = $validated['employment_type'];
+        $agreement->classification_level = $validated['classification_level'];
+        $agreement->guaranteed_hours      = $validated['guaranteed_hours'] ?? null;
+        $agreement->ceis_attached         = $isCasual;
+        $agreement->schedule1_snapshot    = array_merge($agreement->schedule1_snapshot ?? [], [
+            'employment_type'      => $validated['employment_type'],
+            'classification_level' => $validated['classification_level'],
+            'guaranteed_hours'      => $validated['guaranteed_hours'] ?? null,
+        ]);
+        $agreement->save();
 
         $this->regenerateAndStorePdf($agreement, [
-            'employee_signature_name'         => $request->signature_name,
+            'employee_signature_name'         => $validated['signature_name'],
             'employee_signature_image_base64' => base64_encode($decodedImage),
             'employee_signed_at'              => $signedAt->format('d M Y, g:i A'),
         ]);
 
         $agreement->update([
             'status'                        => 'employee_signed',
-            'employee_signature_name'       => $request->signature_name,
+            'employee_signature_name'       => $validated['signature_name'],
             'employee_signature_image_path' => 'employee-agreements/signatures/' . $signatureFilename,
             'employee_signed_at'            => $signedAt,
             'employee_signed_ip'            => $request->ip(),
         ]);
 
-        // Notify admin that the employee's half is done and a countersignature is needed.
+        // Keep the canonical Staff record in sync now that the employee has
+        // actually locked these values in — rostering/payroll read these.
+        Staff::where('id', $agreement->staff_id)->update([
+            'employment_type'      => $agreement->employment_type,
+            'classification_level' => $agreement->classification_level,
+            'guaranteed_hours'      => $agreement->guaranteed_hours,
+        ]);
+
+        // Send a copy to admin with the (employee-signed) PDF attached, so
+        // admin can review before countersigning in the portal.
         $adminAddress = config('mail.staffoo_admin_address', 'Amrit.Arora@Staffoo.com.au');
         try {
             Mail::to($adminAddress)->send(new EmployeeAgreementSignedMail(
@@ -271,9 +300,10 @@ class EmployeeAgreementController extends Controller
     }
 
     /**
-     * STEP 4 — Ops Manager / Director countersigns (admin-authenticated route).
+     * STEP 4 — Ops Manager / Director countersigns from the admin portal.
      * Completes dual execution; emails the fully executed PDF + statutory
-     * attachments (FWIS always, CEIS if casual) to the employee and admin.
+     * attachments (FWIS always, CEIS if the employee ended up Casual) to
+     * BOTH the employee and the admin.
      *
      * POST /admin/employment-agreement/{id}/countersign
      * Body: { signature_name, signature_image }
@@ -349,19 +379,19 @@ class EmployeeAgreementController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Agreement fully executed and emailed to the employee with statutory attachments.',
+            'message' => 'Agreement fully executed and emailed to the employee and admin with statutory attachments.',
         ], 200);
     }
 
     /**
      * Shared PDF-regeneration step used by both sign() and counterSign().
-     * Rebuilds from the frozen schedule1_snapshot plus whichever signature
-     * fields are being added, so earlier signatures already on file are
-     * preserved automatically (they're read back from the DB columns).
+     * Rebuilds from the agreement's CURRENT columns (not a stale snapshot),
+     * so whichever employment_type/classification the employee just locked
+     * in, and whichever signatures already exist, always come through.
      */
     private function regenerateAndStorePdf(EmployeeAgreement $agreement, array $newFields, bool $asFinal = false): void
     {
-        $pdfData = array_merge($agreement->schedule1_snapshot ?? [], [
+        $pdfData = array_merge([
             'agreement_number' => $agreement->agreement_number,
             'date'             => $agreement->created_at->format('d M Y'),
             'employee_name'    => $agreement->employee_name,
@@ -398,7 +428,7 @@ class EmployeeAgreementController extends Controller
     }
 
     /**
-     * Admin dashboard list — GET /admin/employment-agreements?status=pending_signature
+     * Admin portal list — GET /admin/employment-agreements?status=pending_signature
      */
     public function index(Request $request)
     {
