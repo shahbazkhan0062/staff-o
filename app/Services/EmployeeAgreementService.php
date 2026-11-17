@@ -359,16 +359,24 @@ class EmployeeAgreementService
         .notice-table th { background:#0A7C6E; color:#fff; padding: 5px 8px; text-align:left; font-size: 8.6px; }
         .notice-table td { border: 1px solid #e2e8f0; padding: 5px 8px; }
         .notice-table-footnote { font-size: 8px; color:#6B7280; margin: 2px 0 10px; }
-        /* dompdf does not reliably honor page-break-inside: avoid on a block
-           or table placed near a page boundary -- in practice it can still
-           split the row and render a solid black fill at the cut (a known
-           dompdf rendering bug, made worse by border-radius on the split
-           cell). The fix dompdf honors consistently is forcing this whole
-           block onto a fresh page, so it is never a candidate for a mid-box
-           split in the first place. */
+        /* dompdf does not reliably honor page-break-before/avoid when it is
+           only set as a CSS rule on a block that already has sibling content
+           flowing into it -- it can still split the row and render a solid
+           black fill at the cut (a known dompdf rendering bug). The fix
+           dompdf honors consistently is an explicit empty "page-break" div
+           placed directly in the HTML flow (see buildHtml()), immediately
+           before this block -- that is what actually forces the new page,
+           not this class alone. This class is kept as a harmless backup. */
         .execution-block { page-break-before: always; page-break-inside: avoid; padding-top: 4px; }
         .sign-section { margin-top: 16px; width: 100%; border-collapse: separate; border-spacing: 0; page-break-inside: avoid; }
-        .sign-col { width:48.5%; vertical-align:top; padding: 10px; border:1px solid #d1d5db; }
+        .sign-section tr { page-break-inside: avoid; }
+        /* No border on the <td> itself -- a border on a table cell that
+           dompdf ends up splitting is what produces the black-fill artifact.
+           The border lives on an inner div instead, so even in the worst
+           case a split only loses the inner boxs visible edge, never
+           paints a black bar. */
+        .sign-col { width:48.5%; vertical-align:top; padding: 0; }
+        .sign-box { padding: 10px; border:1px solid #d1d5db; }
         .sign-spacer { width:3%; }
         .sign-subtitle { font-weight:bold; font-size:10px; margin-bottom:6px; }
         .sign-role-note { font-size:8.5px; color:#6B7280; margin-bottom: 6px; }
@@ -425,19 +433,22 @@ class EmployeeAgreementService
         }
         $html .= "</ul>";
 
-        // Execution (Clause 16 — verbatim from the master template). Wrapped
-        // together with the signature boxes in one page-break-avoid block so
-        // the printer never splits a signature box (or the heading from its
-        // boxes) across two pages.
+        // Execution (Clause 16 — verbatim from the master template). Forced
+        // onto its own fresh page via the explicit empty page-break div
+        // below (dompdf honors this reliably, unlike a CSS page-break-before
+        // rule on a block with prior siblings), then wrapped together with
+        // the signature boxes in a page-break-avoid block so the heading is
+        // never separated from its boxes.
+        $html .= "<div style='page-break-before: always;'></div>";
         $html .= "<div class='execution-block'>";
         $html .= "<div class='section-title'>16. Execution &amp; Acknowledgement</div>";
         $html .= "<p>By signing below, the Employee acknowledges that they have read, understood, and accepted all terms, conditions, and schedules of this Employment Agreement, "
                . "including the requirement to maintain active licensing, comply with WHS policies, and utilize the Staffoo Mobile Application for shift management.</p>";
 
         $html .= "<table class='sign-section'><tr>"
-               . "<td class='sign-col'>{$employeeSigHtml}</td>"
+               . "<td class='sign-col'><div class='sign-box'>{$employeeSigHtml}</div></td>"
                . "<td class='sign-spacer'></td>"
-               . "<td class='sign-col'>{$employerSigHtml}</td>"
+               . "<td class='sign-col'><div class='sign-box'>{$employerSigHtml}</div></td>"
                . "</tr></table>";
         $html .= "</div>";
 
