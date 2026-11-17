@@ -415,12 +415,17 @@ class EmployeeAgreementService
         }
         $html .= "</ul>";
 
-        // Execution (Clause 16 — verbatim from the master template)
+        // Execution (Clause 16 — verbatim from the master template). Wrapped
+        // together with the signature boxes in one page-break-avoid block so
+        // the printer never splits a signature box (or the heading from its
+        // boxes) across two pages.
+        $html .= "<div class='execution-block'>";
         $html .= "<div class='section-title'>16. Execution &amp; Acknowledgement</div>";
         $html .= "<p>By signing below, the Employee acknowledges that they have read, understood, and accepted all terms, conditions, and schedules of this Employment Agreement, "
                . "including the requirement to maintain active licensing, comply with WHS policies, and utilize the Staffoo Mobile Application for shift management.</p>";
 
         $html .= "<div class='sign-section'>{$employeeSigHtml}{$employerSigHtml}</div>";
+        $html .= "</div>";
 
         $html .= "<div class='footer'>Staffoo (Capital Services Pty Ltd) — ABN 48 613 317 838 — Agreement {$agreementNumber}</div>";
         $html .= "</div></body></html>";
