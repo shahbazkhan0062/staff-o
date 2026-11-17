@@ -436,6 +436,12 @@ class EmployeeAgreementController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
+        // Lets the staff-profile screen show just this staff member's own
+        // agreement(s) in their "Employment Agreement" tab, instead of the
+        // full admin list.
+        if ($request->filled('user_id')) {
+            $query->where('user_id', $request->user_id);
+        }
         $agreements = $query->orderByDesc('created_at')->paginate(25);
 
         return response()->json(['success' => true, 'data' => $agreements], 200);

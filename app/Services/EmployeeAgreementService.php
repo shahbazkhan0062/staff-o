@@ -110,6 +110,193 @@ class EmployeeAgreementService
         return $html;
     }
 
+    /**
+     * Clauses 1-15, reproduced verbatim from the Staffoo master template
+     * (Ref: EMP-AGR-2026-V4) — same wording, same clause numbers/headings,
+     * same sub-clause structure as the source PDF. This is static legal
+     * text (identical on every agreement); only Schedule 1/2 below it are
+     * per-employee. Clause 16 and the signature section are rendered by
+     * buildHtml() itself, immediately after this.
+     */
+    private function fullClausesHtml(): string
+    {
+        $html = "<div class='notice-box'><strong>Employment Framework Notice:</strong> This document constitutes a binding contract of employment between Capital "
+               . "Services Pty Ltd (t/a Staffoo) and the Employee named in Schedule 1. It operates in full conjunction with the Fair Work Act 2009 (Cth), state Security "
+               . "Industry acts/regulations, and state Labour Hire Licensing laws.</div>";
+
+        $html .= "<div class='section-title'>1. Parties &amp; Operational Framework</div>";
+        $html .= "<p>This Employment Agreement (the \"Agreement\") is made between Capital Services Pty Ltd trading as Staffoo (ABN 48 613 317 838) (\"the Employer\" or "
+               . "\"Company\"), located at Melbourne VIC Australia, and the individual identified as the Employee in Schedule 1 of this Agreement (\"the Employee\").</p>";
+        $html .= "<p>The Employer operates a specialized security manpower, technology, and labour hire platform providing verified security personnel, crowd controllers, "
+               . "monitoring staff, and event security across Australia. The Employee agrees to perform security services for the Employer and its deployed clients in strict "
+               . "compliance with the terms and conditions set out herein.</p>";
+
+        $html .= "<div class='section-title'>2. Industrial Instrument &amp; Classification</div>";
+        $html .= "<p><span class='clause-sub'>2.1 Award Coverage:</span> This Agreement is governed by the Fair Work Act 2009 (Cth), the National Employment Standards (NES), "
+               . "and the Security Services Industry Award 2020 [MA000016] (the \"Award\"), as amended or replaced from time to time. To the extent of any inconsistency "
+               . "between this Agreement and the Award, the statutory minimums of the Award or NES shall prevail, except where this Agreement provides a more favorable "
+               . "benefit to the Employee overall.</p>";
+        $html .= "<p><span class='clause-sub'>2.2 Classification Level:</span> The Employee is engaged at the Award Classification Level specified in Schedule 1 (typically "
+               . "Security Officer Level 1 through Level 5). The Employee agrees to perform all duties assigned within their statutory competency, licensing class, and "
+               . "training level.</p>";
+
+        $html .= "<div class='section-title'>3. Category of Employment</div>";
+        $html .= "<p>The employment category shall be specified in Schedule 1 as one of the following:</p>";
+        $html .= "<p><span class='clause-sub'>3.1 Full-Time Employment:</span> A Full-Time Employee is engaged to work an average of 38 ordinary hours per week, structured "
+               . "over an agreed roster cycle in accordance with Award Clause 13. Full-Time Employees accumulate paid annual leave and personal/carer's leave pursuant to the "
+               . "NES.</p>";
+        $html .= "<p><span class='clause-sub'>3.2 Part-Time Employment:</span> A Part-Time Employee is engaged to work fewer than 38 ordinary hours per week on a regular "
+               . "rostered pattern. In accordance with Award Clause 10, the Employer and Employee shall agree in writing (via Schedule 1 or roster confirmation within the "
+               . "Staffoo Platform) on a guaranteed minimum number of ordinary hours per week or fortnightly roster cycle. Hours worked beyond agreed ordinary hours or "
+               . "rostered patterns shall be compensated in accordance with Award overtime provisions.</p>";
+        $html .= "<p><span class='clause-sub'>3.3 Casual Employment:</span> A Casual Employee is engaged on an hourly, shift-by-shift basis with no firm advance commitment "
+               . "to ongoing work or guaranteed rostered hours. Casual Employees receive a 25% casual loading on their ordinary base hourly rate as prescribed in Schedule 2, "
+               . "which is paid in lieu of statutory paid leave entitlements (annual leave, personal leave, notice of termination, and redundancy pay under the NES).</p>";
+
+        $html .= "<div class='section-title'>4. Multi-Site Deployment &amp; Duties</div>";
+        $html .= "<p><span class='clause-sub'>4.1 Mobile Roster &amp; Site Flexibility:</span> The security industry requires operational agility. The Employee accepts that "
+               . "deployment may occur across multiple client locations, venues, commercial properties, public infrastructure, or event spaces as allocated by the Employer "
+               . "via the Staffoo Mobile Application (\"Staffoo App\").</p>";
+        $html .= "<p><span class='clause-sub'>4.2 Core Operational Duties:</span> The Employee's duties include, but are not limited to:</p>";
+        $html .= "<ul class='attach-list'>"
+               . "<li>Access control, static guarding, perimeter patrols, crowd control, and asset protection.</li>"
+               . "<li>Enforcing client venue rules, screening entrants, managing conflict, and preventing unlawful trespass.</li>"
+               . "<li>Monitoring security control rooms, CCTV systems, alarm panels, and automated access gates.</li>"
+               . "<li>Maintaining detailed electronic shift logs, incident reports, and risk assessments via the Staffoo App.</li>"
+               . "<li>Rendering emergency First Aid and co-ordinating emergency evacuations in accordance with site SOPs.</li>"
+               . "<li>Adhering strictly to all client site Standard Operating Procedures (SOPs) and lawful directions.</li>"
+               . "</ul>";
+
+        $html .= "<div class='section-title'>5. Remuneration, Penalties &amp; Dynamic Fair Work Rate Linkage</div>";
+        $html .= "<p><span class='clause-sub'>5.1 Hourly Rates &amp; Allowances:</span> The Employer shall pay the Employee not less than the applicable minimum hourly rate, "
+               . "penalty rates (night shift, Saturday, Sunday, Public Holiday), and allowances prescribed under the Award for the Employee's classification level. The "
+               . "baseline rates applying as of 2026 are set out in Schedule 2.</p>";
+        $html .= "<p><span class='clause-sub'>5.2 Statutory Superannuation:</span> The Employer will make compulsory superannuation contributions into the Employee's "
+               . "nominated eligible superannuation fund in accordance with the Superannuation Guarantee (Administration) Act 1992 (Cth).</p>";
+        $html .= "<p><span class='clause-sub'>5.3 Dynamic Annual Wage Increases:</span> Minimum wage rates under the Award are reviewed annually by the Fair Work Commission "
+               . "(FWC), with adjustments taking effect on 1 July each year. The Employer guarantees that the Employee's base rate shall automatically adjust to match or "
+               . "exceed any updated minimum Award rates. The Employee may independently inspect and verify live statutory rates via the official Fair Work Ombudsman portal: "
+               . "www.fairwork.gov.au/pay-and-wages/pay-guides</p>";
+        $html .= "<p><span class='clause-sub'>5.4 Pay Cycle &amp; Electronic Funds Transfer:</span> Remuneration is calculated fortnightly for hours validated through Staffoo "
+               . "App geofenced check-ins and paid via direct electronic funds transfer (EFT) into the Employee's nominated Australian bank account, accompanied by an "
+               . "itemized electronic payslip.</p>";
+
+        $html .= "<div class='section-title'>6. Mandatory Statutory Licensing &amp; Labour Hire Compliance</div>";
+        $html .= "<p><span class='clause-sub'>6.1 Security Licence Condition Precedent:</span> It is a fundamental condition precedent of employment that the Employee "
+               . "maintains at all times a current, valid, and unencumbered State Security Licence (e.g., VIC LRD, NSW SLED, QLD QPS, WA Police, SA Consumer Affairs) with "
+               . "appropriate sub-class endorsements (Unarmed Guard, Crowd Controller, Monitoring Operator) corresponding to their assigned duties.</p>";
+        $html .= "<p><span class='clause-sub'>6.2 First Aid &amp; Statutory Credentials:</span> The Employee must maintain an active HLTAID011 (Provide First Aid) "
+               . "certificate, HLTAID009 (Provide CPR) certificate, RSA (where venue requires), and Working With Children Check (WWCC, where assigned to educational/event "
+               . "sites).</p>";
+        $html .= "<p><span class='clause-sub'>6.3 Immediate Reporting Duty:</span> The Employee must immediately (within 12 hours) notify the Employer in writing if their "
+               . "security licence or driver's licence is suspended, revoked, expired, subjected to court conditions, or if they are charged with an indictable criminal "
+               . "offence or disqualifying offence under state security industry legislation.</p>";
+        $html .= "<p><span class='clause-sub'>6.4 Labour Hire Licensing Act Compliance:</span> The Employee acknowledges that the Employer operates as a registered Labour "
+               . "Hire Provider under applicable state legislation (e.g., Labour Hire Licensing Act 2018 (Vic), Labour Hire Licensing Act 2017 (Qld), Labour Hire Licensing "
+               . "Act 2017 (SA), Labour Hire Licensing Act 2020 (ACT)). The Employee agrees to co-operate with all statutory audits and identity verification checks required "
+               . "under labour hire laws.</p>";
+
+        $html .= "<div class='section-title'>7. Staffoo App Usage, Geofencing &amp; Timesheet Integrity</div>";
+        $html .= "<p><span class='clause-sub'>7.1 Mandatory Mobile Platform Usage:</span> Shift roster allocation, site briefs, check-ins, break logging, incident "
+               . "reporting, and check-outs are managed exclusively via the Staffoo Mobile Application.</p>";
+        $html .= "<p><span class='clause-sub'>7.2 Geofencing Consent:</span> By accepting shifts, the Employee explicitly consents to the Staffoo App recording GPS "
+               . "location coordinates at the time of shift check-in and check-out to verify physical presence on the client site. Location tracking is restricted strictly "
+               . "to active shift windows.</p>";
+        $html .= "<p><span class='clause-sub'>7.3 Prohibition of Device Tampering:</span> The use of GPS-spoofing software, VPN masking, device jailbreaking, or fraudulent "
+               . "proxy check-ins by third parties is strictly prohibited. Any attempt to falsify shift attendance or location data constitutes serious misconduct and will "
+               . "result in summary dismissal without notice and immediate reporting to police security licensing units for fraud.</p>";
+
+        $html .= "<div class='section-title'>8. Uniform, Equipment &amp; Standards of Dress</div>";
+        $html .= "<p><span class='clause-sub'>8.1 Mandatory Uniform Code:</span> Unless explicitly instructed otherwise by a written client site brief, the Employee must "
+               . "attend every shift in the standard professional security uniform:</p>";
+        $html .= "<ul class='attach-list'>"
+               . "<li>Clean, ironed black or white collared security shirt displaying approved security patches/epaulettes;</li>"
+               . "<li>Tailored black trousers (jeans, trackpants, or cargo pants are strictly prohibited);</li>"
+               . "<li>Polished black safety footwear (enclosed steel-toe boots where required by site WHS rules);</li>"
+               . "<li>High-Visibility (Hi-Vis) safety vest bearing \"SECURITY\" markings where mandated by site SOPs;</li>"
+               . "<li>State Security Licence card prominently displayed on outer clothing at all times during shift hours.</li>"
+               . "</ul>";
+        $html .= "<p><span class='clause-sub'>8.2 Return of Company Property:</span> All badges, uniforms, access cards, keys, body-worn cameras, radios, and devices "
+               . "issued by the Employer or Client remain the exclusive property of the Employer/Client and must be returned immediately upon request or termination.</p>";
+
+        $html .= "<div class='section-title'>9. Work Health and Safety (WHS) &amp; Zero Tolerance Drug/Alcohol Policy</div>";
+        $html .= "<p><span class='clause-sub'>9.1 WHS Compliance:</span> The Employee must comply with all health and safety instructions, risk assessments, safe work "
+               . "method statements (SWMS), and site safety policies issued by the Employer or client.</p>";
+        $html .= "<p><span class='clause-sub'>9.2 Zero Tolerance Drug &amp; Alcohol Policy:</span> The security industry is a safety-critical sector. The Employee must "
+               . "maintain 0.00% Blood Alcohol Concentration (BAC) and be completely free of illicit drugs, unprescribed narcotics, or impairing substances while on duty or "
+               . "presenting for a shift. The Employee agrees to submit to random, post-incident, or reasonable-suspicion drug and alcohol testing conducted by authorized "
+               . "testing officers.</p>";
+        $html .= "<p><span class='clause-sub'>9.3 Fitness for Work:</span> The Employee warrants that they possess the physical capability, mental alertness, and "
+               . "visual/auditory acuity required to perform active security patrols, emergency response, and standing duties without hazard to themselves or others.</p>";
+
+        $html .= "<div class='section-title'>10. Client-Driven Removal &amp; Site Barring (\"Client Stand Down\")</div>";
+        $html .= "<p><span class='clause-sub'>10.1 Client Right of Removal:</span> The Employee acknowledges that third-party clients retain the right under commercial "
+               . "contracts to request the immediate removal or replacement of any security staff deployed to their site. A client request for removal does not "
+               . "automatically terminate employment with Staffoo.</p>";
+        $html .= "<p><span class='clause-sub'>10.2 Operational Reallocation:</span> In the event a client bars or requests the removal of an Employee, the Employer will "
+               . "assess the circumstances. Where the removal is due to operational resizing or client preference unrelated to misconduct, the Employer will attempt to "
+               . "redeploy the Employee to alternative client sites. For Casual Employees, unallocated shifts are not guaranteed. For Full-Time/Part-Time Employees, "
+               . "redeployment will be offered subject to available roster vacancies and operational feasibility.</p>";
+
+        $html .= "<div class='section-title'>11. Confidentiality, Media &amp; Intellectual Property</div>";
+        $html .= "<p><span class='clause-sub'>11.1 Strict Confidentiality:</span> The Employee shall not, during or after employment, disclose to any unauthorized person, "
+               . "firm, or entity any confidential information regarding the Employer, Staffoo software algorithms, client lists, site security codes, CCTV footage, alarm "
+               . "layouts, incident logs, or commercial pricing structures.</p>";
+        $html .= "<p><span class='clause-sub'>11.2 Media &amp; Social Media Restrictions:</span> The Employee is strictly forbidden from speaking to news media, filming "
+               . "site operations, or uploading videos, photographs, or commentaries regarding client sites, incidents, or security duties to social media platforms "
+               . "(TikTok, Instagram, Facebook, LinkedIn, X, YouTube) without prior written authorization from the Company Director.</p>";
+
+        $html .= "<div class='section-title'>12. Non-Solicitation &amp; Direct Dealing Restraint</div>";
+        $html .= "<p><span class='clause-sub'>12.1 Non-Solicitation of Clients:</span> During employment and for a period of six (6) months following the termination of "
+               . "employment for any reason, the Employee shall not directly or indirectly solicit, canvas, service, or contract with any client of the Employer to whom the "
+               . "Employee provided security services on behalf of Staffoo during the preceding twelve (12) months.</p>";
+        $html .= "<p><span class='clause-sub'>12.2 Restraint Justification:</span> The Employee acknowledges that this restraint is reasonable and necessary to protect the "
+               . "legitimate commercial interests, customer relationships, and goodwill of the Employer.</p>";
+
+        $html .= "<div class='section-title'>13. Deductions &amp; Set-Off Right</div>";
+        $html .= "<p>In accordance with Section 324 of the Fair Work Act 2009 (Cth), the Employee expressly authorizes the Employer to deduct from their final pay or wages "
+               . "any outstanding amounts lawfully owed by the Employee to the Employer, including unreturned equipment/uniform replacement costs, overpayments, or "
+               . "unreturned client property, provided such deduction is authorized by law or an applicable Award provision.</p>";
+
+        $html .= "<div class='section-title'>14. Termination of Employment &amp; Summary Dismissal</div>";
+        $html .= "<p><span class='clause-sub'>14.1 Notice of Termination (Full-Time and Part-Time):</span> Either party may terminate Full-Time or Part-Time employment "
+               . "by providing written notice in accordance with the NES scale set out below, or by payment in lieu of notice by the Employer:</p>";
+        $html .= "<table class='notice-table'><thead><tr><th>Employee's Period of Continuous Service with Employer</th><th>Statutory Notice Period</th></tr></thead><tbody>"
+               . "<tr><td>Not more than 1 year</td><td>1 week</td></tr>"
+               . "<tr><td>More than 1 year but not more than 3 years</td><td>2 weeks</td></tr>"
+               . "<tr><td>More than 3 years but not more than 5 years</td><td>3 weeks</td></tr>"
+               . "<tr><td>More than 5 years</td><td>4 weeks</td></tr>"
+               . "</tbody></table>";
+        $html .= "<p class='notice-table-footnote'>*Employees aged over 45 years with at least 2 years of continuous service receive an additional 1 week of notice from "
+               . "the Employer.</p>";
+        $html .= "<p><span class='clause-sub'>14.2 Termination of Casual Employment:</span> Casual employment may be terminated by either party giving one (1) hour's "
+               . "notice, or by the conclusion of an accepted shift assignment.</p>";
+        $html .= "<p><span class='clause-sub'>14.3 Summary Dismissal for Serious Misconduct:</span> The Employer reserves the right to terminate employment immediately "
+               . "without notice (or payment in lieu of notice) if the Employee engages in serious misconduct, including but not limited to:</p>";
+        $html .= "<ul class='attach-list'>"
+               . "<li>Theft, fraud, bribery, or dishonesty;</li>"
+               . "<li>Physical assault, verbal abuse, sexual harassment, or severe bullying on shift;</li>"
+               . "<li>Being under the influence of alcohol or illicit drugs while on duty;</li>"
+               . "<li>Abandonment of post, sleeping on shift, or leaving a client site unattended;</li>"
+               . "<li>Falsification of timesheets, GPS data, security licences, or First Aid credentials;</li>"
+               . "<li>Breaching security confidentiality, broadcasting site footage, or unauthorized entry;</li>"
+               . "<li>Severe breach of Work Health and Safety duties resulting in danger to life or property.</li>"
+               . "</ul>";
+        $html .= "<p><span class='clause-sub'>14.4 Licence Expiry / Frustration of Contract:</span> If the Employee's security licence is cancelled, suspended, or lapses, "
+               . "or if an international student visa work limitation is breached, the contract of employment is immediately frustrated and terminated by operation of "
+               . "law, as the Employee can no longer legally perform security work under state licensing acts.</p>";
+        $html .= "<p><span class='clause-sub'>14.5 Abandonment of Employment:</span> If an Employee fails to report for three (3) consecutive rostered shifts without "
+               . "notifying the Employer or providing a valid medical certificate, the Employee will be deemed to have abandoned their employment, resulting in termination "
+               . "for cause.</p>";
+
+        $html .= "<div class='section-title'>15. Governing Law &amp; Dispute Resolution</div>";
+        $html .= "<p>This Agreement is governed by the laws of the State of Victoria and the Commonwealth of Australia. Any industrial dispute arising under this "
+               . "Agreement or the Award shall be resolved in accordance with the dispute resolution procedures set out in Clause 9 of the Award and Section 739 of the "
+               . "Fair Work Act 2009 (Cth).</p>";
+
+        return $html;
+    }
+
     private function buildHtml(array $d): string
     {
         $agreementNumber = htmlspecialchars($d['agreement_number']);
@@ -164,6 +351,11 @@ class EmployeeAgreementService
         .rate-row-highlight td { background:#ecfdf5; font-weight:bold; color:#065f46; }
         .attach-list { margin: 4px 0 10px 4px; font-size: 9.3px; }
         .attach-list li { margin-bottom: 3px; }
+        .clause-sub { font-weight: bold; }
+        .notice-table { width:100%; border-collapse: collapse; margin: 8px 0 4px; font-size: 8.8px; page-break-inside: avoid; }
+        .notice-table th { background:#0A7C6E; color:#fff; padding: 5px 8px; text-align:left; font-size: 8.6px; }
+        .notice-table td { border: 1px solid #e2e8f0; padding: 5px 8px; }
+        .notice-table-footnote { font-size: 8px; color:#6B7280; margin: 2px 0 10px; }
         .sign-section { margin-top: 16px; }
         .sign-cols { width:100%; }
         .sign-col { display:inline-block; width:48%; vertical-align:top; padding: 10px; border:1px solid #d1d5db; border-radius:6px; }
@@ -186,18 +378,11 @@ class EmployeeAgreementService
         $html .= "<td class='header-meta'>Agreement #: {$agreementNumber}<br>Date: {$date}</td>";
         $html .= "</tr></table></div>";
 
-        $html .= "<div class='notice-box'><strong>Employment Framework Notice:</strong> This document constitutes a binding contract of employment between "
-               . "Capital Services Pty Ltd (t/a Staffoo) and the Employee named in Schedule 1. It operates in conjunction with the Fair Work Act 2009 (Cth), "
-               . "state Security Industry legislation, and state Labour Hire Licensing laws, and incorporates the Security Services Industry Award 2020 [MA000016].</div>";
-
-        // Abbreviated summary of key clauses (full text lives in the master template / company policy library — not duplicated per-employee PDF to keep print size small)
-        $html .= "<div class='section-title'>Key Terms Summary</div>";
-        $html .= "<p>The Employee is engaged on the terms of the Security Services Industry Award 2020 [MA000016] and the Fair Work Act 2009 (Cth) National Employment Standards. "
-               . "Duties include static guarding, access control, crowd control, patrols, and incident/CCTV monitoring as rostered via the Staffoo Mobile Application, which is used "
-               . "exclusively for shift check-in/check-out, geofenced attendance, break logging and incident reporting. The Employee must maintain a current State Security Licence and "
-               . "any role-specific credentials (First Aid, RSA, WWCC) at all times, must present in standard uniform, and is subject to a zero-tolerance drug and alcohol policy. "
-               . "Full clause text (classification, termination notice scale, confidentiality, non-solicitation, deductions, dispute resolution) is set out in the Staffoo Employment "
-               . "Agreement master terms (Ref: EMP-AGR-2026-V4), which this Schedule incorporates by reference and which the Employee is provided in full alongside this signing page.</p>";
+        // Full clause text, reproduced verbatim from the Staffoo master template
+        // (Ref: EMP-AGR-2026-V4) — Clauses 1-15. Clause 16 (Execution &
+        // Acknowledgement) is rendered further down, right before the
+        // signature section, exactly as it appears in the master.
+        $html .= $this->fullClausesHtml();
 
         // Schedule 1
         $html .= "<div class='section-title'>Schedule 1 — Employment Particulars</div>";
@@ -230,10 +415,10 @@ class EmployeeAgreementService
         }
         $html .= "</ul>";
 
-        // Execution
-        $html .= "<div class='section-title'>Execution &amp; Acknowledgement</div>";
-        $html .= "<p style='font-size:9px;'>By signing below, the Employee acknowledges that they have read, understood, and accepted all terms, conditions, and schedules of this Employment Agreement, "
-               . "including the requirement to maintain active licensing, comply with WHS policies, and utilise the Staffoo Mobile Application for shift management, and confirms receipt of the statutory attachments listed above.</p>";
+        // Execution (Clause 16 — verbatim from the master template)
+        $html .= "<div class='section-title'>16. Execution &amp; Acknowledgement</div>";
+        $html .= "<p>By signing below, the Employee acknowledges that they have read, understood, and accepted all terms, conditions, and schedules of this Employment Agreement, "
+               . "including the requirement to maintain active licensing, comply with WHS policies, and utilize the Staffoo Mobile Application for shift management.</p>";
 
         $html .= "<div class='sign-section'>{$employeeSigHtml}{$employerSigHtml}</div>";
 
