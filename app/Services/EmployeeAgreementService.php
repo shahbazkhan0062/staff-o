@@ -359,15 +359,14 @@ class EmployeeAgreementService
         .notice-table th { background:#0A7C6E; color:#fff; padding: 5px 8px; text-align:left; font-size: 8.6px; }
         .notice-table td { border: 1px solid #e2e8f0; padding: 5px 8px; }
         .notice-table-footnote { font-size: 8px; color:#6B7280; margin: 2px 0 10px; }
-        /* dompdf does not reliably honor page-break-before/avoid when it is
-           only set as a CSS rule on a block that already has sibling content
-           flowing into it -- it can still split the row and render a solid
-           black fill at the cut (a known dompdf rendering bug). The fix
-           dompdf honors consistently is an explicit empty "page-break" div
-           placed directly in the HTML flow (see buildHtml()), immediately
-           before this block -- that is what actually forces the new page,
-           not this class alone. This class is kept as a harmless backup. */
-        .execution-block { page-break-before: always; page-break-inside: avoid; padding-top: 4px; }
+        /* The page break onto a fresh page is forced by the explicit empty
+           "page-break" div placed directly in the HTML flow (see
+           buildHtml()), immediately before this block -- NOT by a
+           page-break-before rule here. Having both fired a break-before-
+           the-div AND a break-before-this-block, which rendered an extra
+           blank page in between. Only page-break-inside stays here, to
+           keep the heading glued to its signature boxes. */
+        .execution-block { page-break-inside: avoid; padding-top: 4px; }
         .sign-section { margin-top: 16px; width: 100%; border-collapse: separate; border-spacing: 0; page-break-inside: avoid; }
         .sign-section tr { page-break-inside: avoid; }
         /* No border on the <td> itself -- a border on a table cell that
