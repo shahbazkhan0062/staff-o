@@ -13,6 +13,7 @@ import { apiURL } from "../utils/exports";
 import { resolveProfileImageUrl } from "../utils/profileImage";
 import { toast } from "react-toastify";
 import StaffOnboardingForms from "../components/StaffOnboardingForms";
+import StaffEmploymentAgreementTab from "../components/StaffEmploymentAgreementTab";
 import ContractorRatesView from "./ContractorRatesView";
 import { Link } from "react-router-dom";
 import {
@@ -456,6 +457,10 @@ export default function EditProfile() {
     0
   );
   const isStaffooStaff = userType === "staff" && parentContractorId === 1;
+  // Employment Agreement tab: only active Staffoo staff — a pending/inactive
+  // Staffoo staff member sees the same "Account Pending" notice as before,
+  // not an agreement tab with nothing meaningful in it yet.
+  const isActiveStaffooStaff = isStaffooStaff && Boolean(userdata?.data?.is_active || userdata?.is_active);
 
   const { submit, loading: submitLoading } = useSubmit({ isAuth: true });
   const { submit: submitSecurityLicense } = useSubmit({
@@ -2294,6 +2299,14 @@ export default function EditProfile() {
             Verification Forms
           </button>
         )}
+        {isActiveStaffooStaff && (
+          <button
+            className={`tab-btn ${activeTab === "agreement" ? "active" : "inactive"}`}
+            onClick={() => handleTabClick("agreement")}
+          >
+            Employment Agreement
+          </button>
+        )}
         {(isStaffooStaff || userType === "contractor") && (
           <button
             className={`tab-btn ${activeTab === "induction" ? "active" : "inactive"}`}
@@ -2362,6 +2375,10 @@ export default function EditProfile() {
 
       {activeTab === "onboarding" && isStaffooStaff && (
         <StaffOnboardingForms submit={submit} userId={userId} />
+      )}
+
+      {activeTab === "agreement" && isActiveStaffooStaff && (
+        <StaffEmploymentAgreementTab userId={userId} />
       )}
 
       {activeTab === "induction" && (isStaffooStaff || userType === "contractor") && (

@@ -5,6 +5,7 @@ import useSubmit from "../hooks/useSubmit";
 import Loader from "../components/Loader";
 import DocumentTable from "../components/DocumentTable";
 import StaffOnboardingForms from "../components/StaffOnboardingForms";
+import StaffEmploymentAgreementTab from "../components/StaffEmploymentAgreementTab";
 import ProfileForm from "../components/ProfileForm";
 import TablePagination from "../components/TablePagination";
 import { toast } from "react-toastify";
@@ -1755,6 +1756,9 @@ const StaffooStaff = () => {
                                         </button>
                                         <button type="button" className={`btn ${activeModalTab === "documents" ? "btn-dark" : "btn-light"} ${showDocErrors && !isDocumentsComplete ? "shake-red" : ""} border-0`} onClick={() => handleTabClick("documents")} style={{ borderRadius: 8, fontWeight: 600, fontSize: "0.85rem", padding: "0.5rem 1rem" }}>Documents</button>
                                         <button type="button" className={`btn ${activeModalTab === "onboarding" ? "btn-dark" : "btn-light"} border-0`} onClick={() => handleTabClick("onboarding")} style={{ borderRadius: 8, fontWeight: 600, fontSize: "0.85rem", padding: "0.5rem 1rem" }}>Verification Forms</button>
+                                        {isUserActive(editingUser) && (
+                                            <button type="button" className={`btn ${activeModalTab === "agreement" ? "btn-dark" : "btn-light"} border-0`} onClick={() => handleTabClick("agreement")} style={{ borderRadius: 8, fontWeight: 600, fontSize: "0.85rem", padding: "0.5rem 1rem" }}>Employment Agreement</button>
+                                        )}
                                     </div>
 
                                     {activeModalTab === "personal" ? (
@@ -1838,8 +1842,14 @@ const StaffooStaff = () => {
 
                                             <DocumentTable documents={staffDocuments} userType="staff" onAddFile={openDocumentModal} showDocErrors={showDocErrors} isStaffooStaff={true} readOnly={isViewMode} />
                                         </div>
-                                    ) : (
+                                    ) : activeModalTab === "onboarding" ? (
                                         <div><StaffOnboardingForms submit={submit} userId={editingUser?.id} contractorId={1} /></div>
+                                    ) : activeModalTab === "agreement" && isUserActive(editingUser) ? (
+                                        <StaffEmploymentAgreementTab userId={editingUser?.id} />
+                                    ) : (
+                                        <div className="text-center text-muted py-5">
+                                            This staff member isn't active yet — the Employment Agreement tab becomes available once their account is activated.
+                                        </div>
                                     )}
                                 </>
                             )}

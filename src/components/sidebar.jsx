@@ -233,6 +233,7 @@ const Sidebar = memo(function Sidebar() {
     { to: "/reports", icon: "fa-solid fa-chart-pie", label: "Reports Management" },
     { to: "/chat", icon: "fa-solid fa-headset", label: "Support & Chat" },
     { to: "/pay-charge-rate", icon: "fa-solid fa-building-columns", label: "Accounts" },
+    { to: "/employment-agreements", icon: "fa-solid fa-file-pen", label: "Employment Agreements" },
     { to: "/partner-contracts", icon: "fa-solid fa-file-signature", label: "Partner Contracts" },
     { to: "/my-job-applications", icon: "fa-solid fa-list-check", label: "All Jobs" },
     { to: "/payment-history", icon: "fa-solid fa-vault", label: "Financials" },
