@@ -4228,8 +4228,8 @@ private function sendStaffActivationNotification(User $user): void
                     'j.state',
                     'j.address',
                     'j.site_name',
+                    'j.region',                                   // needed for metro/regional rate lookup
                     'cust.name AS customer_name',
-                    // 'g.phone AS guard_phone',
                     'g.name  AS guard_name',
                     'ja.signin_time',
                     'ja.signout_time',
@@ -4257,7 +4257,26 @@ private function sendStaffActivationNotification(User $user): void
                 ->where('status', 'active')
                 ->first();
 
+            // Hour-bucket keys that must exist on every roster row before we aggregate
+            $hourKeys = [
+                'morning_hours',
+                'night_hours',
+                'ph_morning_hours',
+                'ph_night_hours',
+                'saturday_morning_hours',
+                'saturday_night_hours',
+                'sunday_morning_hours',
+                'sunday_night_hours',
+            ];
+
             foreach ($results as $key => $roster) {
+
+                // Ensure every hour key exists so math never hits "undefined index"
+                foreach ($hourKeys as $hk) {
+                    if (!array_key_exists($hk, $roster) || $roster[$hk] === null) {
+                        $roster[$hk] = 0;
+                    }
+                }
 
                 $roster['day_rate']            = 0;
                 $roster['night_rate']          = 0;
@@ -4269,28 +4288,26 @@ private function sendStaffActivationNotification(User $user): void
 
                 if (!empty($chargerate)) {
 
-                if($roster->region == 'metro'){
-                    $roster['day_rate']            = $chargerate->def_metro_mon_to_fri_day_rate;
-                    $roster['night_rate']          = $chargerate->def_metro_mon_to_fri_night_rate;
-                    $roster['public_holiday_rate'] = $chargerate->def_metro_pub_holi_day_rate;
-                    $roster['saturday_rate']       = $chargerate->def_metro_sat_day_rate;
-                    $roster['sunday_rate']         = $chargerate->def_metro_sun_day_rate;
-                }else{
-                    $roster['day_rate']            = $chargerate->def_reg_mon_to_fri_day_rate;
-                    $roster['night_rate']          = $chargerate->def_reg_mon_to_fri_night_rate;
-                    $roster['public_holiday_rate'] = $chargerate->def_reg_pub_holi_day_rate;
-                    $roster['saturday_rate']       = $chargerate->def_reg_sat_day_rate;
-                    $roster['sunday_rate']         = $chargerate->def_reg_sun_day_rate;
-                }
-
-                  
+                    if (($roster['region'] ?? null) === 'metro') {
+                        $roster['day_rate']            = $chargerate->def_metro_mon_to_fri_day_rate;
+                        $roster['night_rate']          = $chargerate->def_metro_mon_to_fri_night_rate;
+                        $roster['public_holiday_rate'] = $chargerate->def_metro_pub_holi_day_rate;
+                        $roster['saturday_rate']       = $chargerate->def_metro_sat_day_rate;
+                        $roster['sunday_rate']         = $chargerate->def_metro_sun_day_rate;
+                    } else {
+                        $roster['day_rate']            = $chargerate->def_reg_mon_to_fri_day_rate;
+                        $roster['night_rate']          = $chargerate->def_reg_mon_to_fri_night_rate;
+                        $roster['public_holiday_rate'] = $chargerate->def_reg_pub_holi_day_rate;
+                        $roster['saturday_rate']       = $chargerate->def_reg_sat_day_rate;
+                        $roster['sunday_rate']         = $chargerate->def_reg_sun_day_rate;
+                    }
 
                     $roster['total_amount'] =
                         ($roster['day_rate']            * $roster['morning_hours']) +
-                        ($roster['night_rate']           * $roster['night_hours']) +
-                        ($roster['public_holiday_rate']  * ($roster['ph_morning_hours']       + $roster['ph_night_hours'])) +
-                        ($roster['saturday_rate']        * ($roster['saturday_morning_hours'] + $roster['saturday_night_hours'])) +
-                        ($roster['sunday_rate']          * ($roster['sunday_morning_hours']   + $roster['sunday_night_hours']));
+                        ($roster['night_rate']          * $roster['night_hours']) +
+                        ($roster['public_holiday_rate'] * ($roster['ph_morning_hours']       + $roster['ph_night_hours'])) +
+                        ($roster['saturday_rate']       * ($roster['saturday_morning_hours'] + $roster['saturday_night_hours'])) +
+                        ($roster['sunday_rate']         * ($roster['sunday_morning_hours']   + $roster['sunday_night_hours']));
                 }
 
                 $results[$key] = $roster;
@@ -4300,38 +4317,41 @@ private function sendStaffActivationNotification(User $user): void
             if ($request->type === 'normal') {
 
                 $total_hours = [
-                    0 => ['name' => 'M-F Morning Hours',    'hours' => 0, 'payrate' => 0, 'totalpay' => 0],
-                    1 => ['name' => 'M-F Night Hours',       'hours' => 0, 'payrate' => 0, 'totalpay' => 0],
-                    2 => ['name' => 'Saturday Hours',        'hours' => 0, 'payrate' => 0, 'totalpay' => 0],
-                    3 => ['name' => 'Sunday Hours',          'hours' => 0, 'payrate' => 0, 'totalpay' => 0],
-                    4 => ['name' => 'Public Holiday Hours',  'hours' => 0, 'payrate' => 0, 'totalpay' => 0],
+                    0 => ['name' => 'M-F Morning Hours',   'hours' => 0, 'payrate' => 0, 'totalpay' => 0],
+                    1 => ['name' => 'M-F Night Hours',     'hours' => 0, 'payrate' => 0, 'totalpay' => 0],
+                    2 => ['name' => 'Saturday Hours',      'hours' => 0, 'payrate' => 0, 'totalpay' => 0],
+                    3 => ['name' => 'Sunday Hours',        'hours' => 0, 'payrate' => 0, 'totalpay' => 0],
+                    4 => ['name' => 'Public Holiday Hours','hours' => 0, 'payrate' => 0, 'totalpay' => 0],
                 ];
 
                 foreach ($results as $shift) {
 
-                    // Helper closure to reduce repetition
-                    $add = function (int $index, float $hours, float $rate) use (&$total_hours, $shift) {
-                        $total_hours[$index]['hours']      += $hours;
-                        $total_hours[$index]['payrate']     = $rate;
-                        $total_hours[$index]['totalpay']    = $total_hours[$index]['hours'] * $rate;
-                        // $total_hours[$index]['site_po_wo']  = $shift['site_po_wo'];
-                        // $total_hours[$index]['po_wo']       = $shift['po_wo'];
+                    $add = function (int $index, float $hours, float $rate) use (&$total_hours) {
+                        $total_hours[$index]['hours']   += $hours;
+                        $total_hours[$index]['payrate']  = $rate;
+                        $total_hours[$index]['totalpay'] = $total_hours[$index]['hours'] * $rate;
                     };
 
-                    $add(0, $shift['morning_hours'],                                                $shift['day_rate']);
-                    $add(1, $shift['night_hours'],                                                  $shift['night_rate']);
-                    $add(2, $shift['saturday_morning_hours'] + $shift['saturday_night_hours'],      $shift['saturday_rate']);
-                    $add(3, $shift['sunday_morning_hours']   + $shift['sunday_night_hours'],        $shift['sunday_rate']);
-                    $add(4, $shift['ph_morning_hours']       + $shift['ph_night_hours'],            $shift['public_holiday_rate']);
+                    $add(0, $shift['morning_hours'],                                           $shift['day_rate']);
+                    $add(1, $shift['night_hours'],                                             $shift['night_rate']);
+                    $add(2, $shift['saturday_morning_hours'] + $shift['saturday_night_hours'], $shift['saturday_rate']);
+                    $add(3, $shift['sunday_morning_hours']   + $shift['sunday_night_hours'],   $shift['sunday_rate']);
+                    $add(4, $shift['ph_morning_hours']       + $shift['ph_night_hours'],       $shift['public_holiday_rate']);
                 }
 
-                // Always return success; let the frontend decide if data is empty
                 return response()->json([
                     'success' => !empty(array_filter($total_hours, fn($b) => $b['hours'] > 0)),
                     'code'    => 200,
                     'data'    => $total_hours,
                 ]);
             }
+
+            // Fallback so other `type` values don't return an empty 200
+            return response()->json([
+                'success' => !empty($results),
+                'code'    => 200,
+                'data'    => $results,
+            ]);
         }
 
         function getTimesheet(Request $request)
