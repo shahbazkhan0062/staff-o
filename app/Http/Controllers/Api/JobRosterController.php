@@ -4228,7 +4228,6 @@ private function sendStaffActivationNotification(User $user): void
                     'j.state',
                     'j.address',
                     'j.site_name',
-                    'j.region',                                   // needed for metro/regional rate lookup
                     'cust.name AS customer_name',
                     'g.name  AS guard_name',
                     'ja.signin_time',
