@@ -41,6 +41,14 @@ class EmployeeAgreementController extends Controller
     private const DEFAULT_EMPLOYMENT_TYPE = 'casual';
     private const DEFAULT_CLASSIFICATION_LEVEL = 1;
 
+    // Everyone who should get the admin-side employee-agreement-signed
+    // notifications. There's no 'mail.staffoo_admin_address' config key, so
+    // this is the single place to add/remove a recipient.
+    private const ADMIN_NOTIFICATION_EMAILS = [
+        'Amrit.Arora@Staffoo.com.au',
+        'skumraa@staffoo.com.au',
+    ];
+
     /**
      * STEP 1 — Admin triggers this for a staff member. No request body
      * needed — everything is auto-filled; the employee makes the two calls
@@ -286,9 +294,8 @@ class EmployeeAgreementController extends Controller
 
         // Send a copy to admin with the (employee-signed) PDF attached, so
         // admin can review before countersigning in the portal.
-        $adminAddress = config('mail.staffoo_admin_address', 'Amrit.Arora@Staffoo.com.au');
         try {
-            Mail::to($adminAddress)->send(new EmployeeAgreementSignedMail(
+            Mail::to(self::ADMIN_NOTIFICATION_EMAILS)->send(new EmployeeAgreementSignedMail(
                 'Admin', $agreement->employee_name, $agreement->agreement_number,
                 file_get_contents(storage_path('app/public/' . $agreement->pdf_path))
             ));
@@ -371,9 +378,8 @@ class EmployeeAgreementController extends Controller
             }
         }
 
-        $adminAddress = config('mail.staffoo_admin_address', 'Amrit.Arora@Staffoo.com.au');
         try {
-            Mail::to($adminAddress)->send(new EmployeeAgreementSignedMail(
+            Mail::to(self::ADMIN_NOTIFICATION_EMAILS)->send(new EmployeeAgreementSignedMail(
                 'Admin', $agreement->employee_name, $agreement->agreement_number, $finalPdfBytes, $statutoryPaths
             ));
         } catch (\Exception $e) {
