@@ -4,7 +4,7 @@ namespace App\Events;
 
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
@@ -14,8 +14,14 @@ use Illuminate\Queue\SerializesModels;
  * channel, which they're already authorized for and already subscribed to
  * (see src/hooks/useEcho.js on the frontend). Nothing is persisted — this
  * is fire-and-forget, purely for the UI indicator.
+ *
+ * Uses ShouldBroadcastNow (not ShouldBroadcast) so it fires synchronously
+ * instead of going through the queue. A typing indicator is only useful if
+ * it arrives within a second or two — if this were queued and no queue
+ * worker happens to be running (or it's just backed up), the ping would
+ * show up late or not at all, which is why it wasn't appearing.
  */
-class UserTypingEvent implements ShouldBroadcast
+class UserTypingEvent implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
