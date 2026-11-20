@@ -205,6 +205,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/read/{messageId}', [MessageController::class, 'markAsRead']);
         Route::post('/read-all/{userId}', [MessageController::class, 'markAllAsRead']);
         Route::delete('/{messageId}', [MessageController::class, 'deleteMessage']);
+        Route::post('/typing', [MessageController::class, 'typingStatus']);
     });
     
     // RTM

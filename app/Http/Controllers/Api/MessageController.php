@@ -173,6 +173,35 @@ class MessageController extends Controller
         return response()->json($conversations);
     }
 
+    // Broadcasts "X is typing..." / clears it, onto the receiver's own
+    // notifications channel. Fire-and-forget — nothing is stored.
+    public function typingStatus(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'receiver_id' => 'required|integer|exists:users,id',
+            'is_typing' => 'required|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $receiverId = (int) $request->receiver_id;
+
+        if ($receiverId === Auth::id()) {
+            return response()->json(['success' => true]);
+        }
+
+        broadcast(new \App\Events\UserTypingEvent(
+            Auth::id(),
+            Auth::user()->name,
+            $receiverId,
+            (bool) $request->is_typing
+        ));
+
+        return response()->json(['success' => true]);
+    }
+
     public function markAsRead($messageId)
     {
         $message = Message::findOrFail($messageId);
