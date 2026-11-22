@@ -131,6 +131,7 @@
         .action-button {
             text-align: center;
             margin: 30px 0;
+            color: #F5F8F5;
         }
         .button {
             display: inline-block;

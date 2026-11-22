@@ -279,11 +279,6 @@
                 </div>
             </div>
 
-            <div style="text-align: center;">
-                <a href="{{ $appUrl }}" class="button" target="_blank">
-                    Visit Our Website →
-                </a>
-            </div>
 
             <div class="signature">
                 <p>Best regards,</p>
