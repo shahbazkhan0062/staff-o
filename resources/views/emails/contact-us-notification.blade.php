@@ -239,12 +239,6 @@
                 </div>
             </div>
 
-            <div class="action-button">
-                <a href="{{ $appUrl }}/admin/contact-us/{{ $contactId }}" class="button" target="_blank">
-                    View in Dashboard →
-                </a>
-            </div>
-
             <hr>
 
             <div style="background-color: #f0fdf9; padding: 15px; border-radius: 8px; margin-top: 20px;">
