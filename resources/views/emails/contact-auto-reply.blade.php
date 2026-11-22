@@ -272,11 +272,6 @@
                     <a href="tel:{{ $supportPhone }}">{{ $supportPhone }}</a>
                 </div>
                 @endif
-
-                <div class="contact-detail">
-                    <span>⏰</span>
-                    <span>{{ $supportHours }}</span>
-                </div>
             </div>
 
 
