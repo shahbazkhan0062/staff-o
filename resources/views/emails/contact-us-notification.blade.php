@@ -14,8 +14,8 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             line-height: 1.6;
-            color: #1f2937;
-            background-color: #f3f4f6;
+            color: #14181C;
+            background-color: #F5F8F5;
             margin: 0;
             padding: 20px;
         }
@@ -25,10 +25,10 @@
             background-color: #ffffff;
             border-radius: 16px;
             overflow: hidden;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            box-shadow: 0 4px 6px -1px rgba(10, 25, 48, 0.08), 0 2px 4px -1px rgba(10, 25, 48, 0.05);
         }
         .header {
-            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            background: linear-gradient(135deg, #0a1930 0%, #0e2340 55%, #0A7C6E 100%);
             padding: 30px 20px;
             text-align: center;
         }
@@ -39,7 +39,7 @@
             font-weight: 600;
         }
         .header p {
-            color: rgba(255, 255, 255, 0.9);
+            color: rgba(255, 255, 255, 0.85);
             font-size: 16px;
         }
         .content {
@@ -61,16 +61,16 @@
             letter-spacing: 0.5px;
         }
         .badge-inquiry {
-            background-color: #e0e7ff;
-            color: #4f46e5;
+            background-color: #E1F3F0;
+            color: #075E53;
         }
         .badge-source {
-            background-color: #dcfce7;
-            color: #166534;
+            background-color: #EEF2F7;
+            color: #0e2340;
         }
         .badge-status {
-            background-color: #fed7aa;
-            color: #9a3412;
+            background-color: #FBEFDA;
+            color: #8a5a17;
         }
         .info-grid {
             display: grid;
@@ -79,40 +79,40 @@
             margin-bottom: 25px;
         }
         .info-item {
-            background-color: #f9fafb;
+            background-color: #F5F8F5;
             padding: 15px;
             border-radius: 12px;
-            border-left: 4px solid #4f46e5;
+            border-left: 4px solid #0A7C6E;
         }
         .info-label {
             font-size: 12px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            color: #6b7280;
+            color: #5B6660;
             margin-bottom: 5px;
         }
         .info-value {
             font-size: 16px;
             font-weight: 600;
-            color: #1f2937;
+            color: #14181C;
             word-break: break-word;
         }
         .info-value a {
-            color: #4f46e5;
+            color: #0A7C6E;
             text-decoration: none;
         }
         .info-value a:hover {
             text-decoration: underline;
         }
         .message-section {
-            background-color: #f9fafb;
+            background-color: #F5F8F5;
             padding: 20px;
             border-radius: 12px;
             margin: 25px 0;
-            border: 1px solid #e5e7eb;
+            border: 1px solid #E4E9E4;
         }
         .message-section h3 {
-            color: #4f46e5;
+            color: #0e2340;
             margin-bottom: 15px;
             font-size: 18px;
             display: flex;
@@ -123,7 +123,7 @@
             background-color: white;
             padding: 20px;
             border-radius: 8px;
-            border: 1px solid #e5e7eb;
+            border: 1px solid #E4E9E4;
             white-space: pre-line;
             font-size: 15px;
             line-height: 1.7;
@@ -134,7 +134,7 @@
         }
         .button {
             display: inline-block;
-            background-color: #4f46e5;
+            background-color: #0A7C6E;
             color: white;
             padding: 14px 32px;
             text-decoration: none;
@@ -142,29 +142,29 @@
             font-weight: 600;
             font-size: 16px;
             transition: background-color 0.3s;
-            box-shadow: 0 2px 4px rgba(79, 70, 229, 0.3);
+            box-shadow: 0 2px 4px rgba(10, 124, 110, 0.3);
         }
         .button:hover {
-            background-color: #4338ca;
+            background-color: #075E53;
         }
         .footer {
-            background-color: #f9fafb;
+            background-color: #F5F8F5;
             padding: 25px 30px;
             text-align: center;
-            border-top: 1px solid #e5e7eb;
+            border-top: 1px solid #E4E9E4;
         }
         .footer p {
-            color: #6b7280;
+            color: #5B6660;
             font-size: 14px;
             margin: 5px 0;
         }
         .footer .app-name {
             font-weight: 600;
-            color: #4f46e5;
+            color: #075E53;
         }
         hr {
             border: none;
-            border-top: 1px solid #e5e7eb;
+            border-top: 1px solid #E4E9E4;
             margin: 20px 0;
         }
         @media (max-width: 600px) {
@@ -183,7 +183,7 @@
             <h1>📬 New Contact Submission</h1>
             <p>You have received a new inquiry from your website</p>
         </div>
-        
+
         <div class="content">
             <div class="badge-container">
                 <span class="badge badge-inquiry">{{ $inquiryType }}</span>
@@ -246,12 +246,12 @@
 
             <hr>
 
-            <div style="background-color: #eef2ff; padding: 15px; border-radius: 8px; margin-top: 20px;">
-                <p style="color: #4f46e5; font-weight: 600; margin-bottom: 5px;">📋 Quick Actions:</p>
-                <ul style="color: #1f2937; margin-left: 20px;">
-                    <li>Reply to: <a href="mailto:{{ $email }}" style="color: #4f46e5;">{{ $email }}</a></li>
+            <div style="background-color: #f0fdf9; padding: 15px; border-radius: 8px; margin-top: 20px;">
+                <p style="color: #075E53; font-weight: 600; margin-bottom: 5px;">📋 Quick Actions:</p>
+                <ul style="color: #14181C; margin-left: 20px;">
+                    <li>Reply to: <a href="mailto:{{ $email }}" style="color: #0A7C6E;">{{ $email }}</a></li>
                     @if($phone)
-                    <li>Call: <a href="tel:{{ $phone }}" style="color: #4f46e5;">{{ $phone }}</a></li>
+                    <li>Call: <a href="tel:{{ $phone }}" style="color: #0A7C6E;">{{ $phone }}</a></li>
                     @endif
                 </ul>
             </div>

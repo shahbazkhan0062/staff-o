@@ -14,8 +14,8 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             line-height: 1.6;
-            color: #1f2937;
-            background-color: #f3f4f6;
+            color: #14181C;
+            background-color: #F5F8F5;
             margin: 0;
             padding: 20px;
         }
@@ -25,10 +25,10 @@
             background-color: #ffffff;
             border-radius: 16px;
             overflow: hidden;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            box-shadow: 0 4px 6px -1px rgba(10, 25, 48, 0.08), 0 2px 4px -1px rgba(10, 25, 48, 0.05);
         }
         .header {
-            background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+            background: linear-gradient(135deg, #0a1930 0%, #0e2340 55%, #0A7C6E 100%);
             padding: 40px 20px;
             text-align: center;
         }
@@ -47,29 +47,29 @@
         }
         .greeting {
             font-size: 24px;
-            color: #059669;
+            color: #075E53;
             margin-bottom: 20px;
             font-weight: 600;
         }
         .message-card {
-            background-color: #f0fdf4;
+            background-color: #E1F3F0;
             padding: 25px;
             border-radius: 12px;
             margin: 25px 0;
-            border-left: 4px solid #10b981;
+            border-left: 4px solid #0A7C6E;
         }
         .info-box {
-            background-color: #f9fafb;
+            background-color: #F5F8F5;
             padding: 20px;
             border-radius: 12px;
             margin: 25px 0;
-            border: 1px solid #e5e7eb;
+            border: 1px solid #E4E9E4;
         }
         .info-row {
             display: flex;
             margin-bottom: 15px;
             padding-bottom: 15px;
-            border-bottom: 1px solid #e5e7eb;
+            border-bottom: 1px solid #E4E9E4;
         }
         .info-row:last-child {
             border-bottom: none;
@@ -79,20 +79,20 @@
         .info-label {
             width: 100px;
             font-weight: 600;
-            color: #4b5563;
+            color: #5B6660;
         }
         .info-value {
             flex: 1;
-            color: #1f2937;
+            color: #14181C;
         }
         .contact-card {
-            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            background: linear-gradient(135deg, #f0fdf9 0%, #E1F3F0 100%);
             padding: 25px;
             border-radius: 12px;
             margin: 25px 0;
         }
         .contact-card h3 {
-            color: #2563eb;
+            color: #075E53;
             margin-bottom: 15px;
             font-size: 18px;
             display: flex;
@@ -106,14 +106,14 @@
             gap: 10px;
         }
         .contact-detail a {
-            color: #2563eb;
+            color: #0A7C6E;
             text-decoration: none;
         }
         .contact-detail a:hover {
             text-decoration: underline;
         }
         .expectations-list {
-            background-color: #f9fafb;
+            background-color: #F5F8F5;
             padding: 20px;
             border-radius: 12px;
             margin: 25px 0;
@@ -126,14 +126,14 @@
         }
         .expectations-list li:before {
             content: "✓";
-            color: #10b981;
+            color: #0A7C6E;
             font-weight: bold;
             position: absolute;
             left: 0;
         }
         .button {
             display: inline-block;
-            background-color: #059669;
+            background-color: #0A7C6E;
             color: white;
             padding: 14px 32px;
             text-decoration: none;
@@ -142,10 +142,10 @@
             font-size: 16px;
             margin: 20px 0;
             transition: background-color 0.3s;
-            box-shadow: 0 2px 4px rgba(5, 150, 105, 0.3);
+            box-shadow: 0 2px 4px rgba(10, 124, 110, 0.3);
         }
         .button:hover {
-            background-color: #047857;
+            background-color: #075E53;
         }
         .signature {
             margin-top: 40px;
@@ -154,41 +154,41 @@
         }
         .team-name {
             font-size: 20px;
-            color: #059669;
+            color: #075E53;
             font-weight: 700;
             margin: 10px 0;
         }
         .footer {
-            background-color: #f9fafb;
+            background-color: #F5F8F5;
             padding: 25px 30px;
             text-align: center;
-            border-top: 1px solid #e5e7eb;
+            border-top: 1px solid #E4E9E4;
         }
         .social-links {
             margin-bottom: 15px;
         }
         .social-links a {
-            color: #6b7280;
+            color: #5B6660;
             text-decoration: none;
             margin: 0 10px;
             font-size: 14px;
         }
         .social-links a:hover {
-            color: #059669;
+            color: #0A7C6E;
         }
         .footer p {
-            color: #6b7280;
+            color: #5B6660;
             font-size: 13px;
             margin: 5px 0;
         }
         hr {
             border: none;
-            border-top: 1px solid #e5e7eb;
+            border-top: 1px solid #E4E9E4;
             margin: 20px 0;
         }
         .quote {
             font-style: italic;
-            color: #4b5563;
+            color: #5B6660;
             background-color: white;
             padding: 15px;
             border-radius: 8px;
@@ -202,7 +202,7 @@
             <h1>✨ Thank You!</h1>
             <p>We've received your message and will respond shortly</p>
         </div>
-        
+
         <div class="content">
             <div class="greeting">
                 Dear {{ $name }},
@@ -213,7 +213,7 @@
             </p>
 
             <div class="message-card">
-                <h3 style="color: #059669; margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
+                <h3 style="color: #075E53; margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
                     📝 Your Message Summary
                 </h3>
                 <p><strong>Subject:</strong> {{ $subject }}</p>
@@ -227,7 +227,7 @@
             </div>
 
             <div class="info-box">
-                <h3 style="color: #059669; margin-bottom: 15px;">📋 Submission Details</h3>
+                <h3 style="color: #075E53; margin-bottom: 15px;">📋 Submission Details</h3>
                 <div class="info-row">
                     <span class="info-label">Name:</span>
                     <span class="info-value">{{ $name }}</span>
@@ -250,8 +250,8 @@
                 @endif
             </div>
 
-            <h3 style="color: #1f2937; margin: 30px 0 15px 0;">⏳ What happens next?</h3>
-            
+            <h3 style="color: #0e2340; margin: 30px 0 15px 0;">⏳ What happens next?</h3>
+
             <ul class="expectations-list">
                 <li><strong>Review (24-48 hours):</strong> Our team will review your inquiry and assign it to the appropriate department</li>
                 <li><strong>Response:</strong> You'll receive a personalized response from one of our specialists</li>
@@ -260,19 +260,19 @@
 
             <div class="contact-card">
                 <h3>📞 Need immediate assistance?</h3>
-                
+
                 <div class="contact-detail">
                     <span>📧</span>
                     <a href="mailto:{{ $supportEmail }}">{{ $supportEmail }}</a>
                 </div>
-                
+
                 @if($supportPhone && $supportPhone != 'Not available')
                 <div class="contact-detail">
                     <span>📱</span>
                     <a href="tel:{{ $supportPhone }}">{{ $supportPhone }}</a>
                 </div>
                 @endif
-                
+
                 <div class="contact-detail">
                     <span>⏰</span>
                     <span>{{ $supportHours }}</span>
@@ -287,7 +287,7 @@
 
             <div class="signature">
                 <p>Best regards,</p>
-                <p style="color: #6b7280; margin-top: 5px;">STAFFOO</p>
+                <p style="color: #5B6660; margin-top: 5px;">STAFFOO</p>
             </div>
         </div>
 
