@@ -135,7 +135,7 @@
         .button {
             display: inline-block;
             background-color: #0A7C6E;
-            color: white;
+            color: #F5F8F5;
             padding: 14px 32px;
             text-decoration: none;
             border-radius: 8px;
