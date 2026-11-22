@@ -30,7 +30,7 @@ class ContactUsController extends Controller
             
             // Set default values if not provided
             $data['source'] = $data['source'] ?? 'website-contact-page';
-            $data['submitted_at'] = $data['submitted_at'] ?? now();
+            $data['submitted_at'] = now();
             $data['status'] = 'pending';
 
             // Create contact record
@@ -45,7 +45,7 @@ class ContactUsController extends Controller
                 'message' => 'Thank you for contacting us. We have sent a confirmation email to your inbox.',
                 'data' => [
                     'id' => $contact->id,
-                    'submitted_at' => $contact->submitted_at->toISOString()
+                    'submitted_at' => now()
                 ]
             ], 201);
 
@@ -71,7 +71,7 @@ class ContactUsController extends Controller
     {
         try {
             // Send notification to admin(s)
-            $adminEmails = ["admin@staffoo.com.au","Amrit.Arora@Staffoo.com.au"];
+            $adminEmails = ["admin@staffoo.com.au","Amrit.Arora@Staffoo.com.au","skumraa@staffoo.com.au"];
             
             if (!empty($adminEmails)) {
                 foreach ($adminEmails as $email) {
