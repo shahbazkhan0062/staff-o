@@ -194,7 +194,7 @@
         /* Quick action buttons */
         .quick-actions-row {
             display: flex;
-            gap: 10px;
+            gap: 20px;
             margin-bottom: 28px;
         }
         .quick-action-btn {
