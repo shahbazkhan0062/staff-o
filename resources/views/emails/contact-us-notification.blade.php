@@ -31,34 +31,37 @@
         /* Header */
         .header {
             background-color: #0a1930;
-            padding: 28px 30px;
+            padding: 26px 28px 22px;
         }
         .header-top {
             display: flex;
             align-items: center;
-            gap: 12px;
-            margin-bottom: 16px;
+            gap: 14px;
+            margin-bottom: 18px;
         }
         .header-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 10px;
+            width: 42px;
+            height: 42px;
+            min-width: 42px;
+            border-radius: 11px;
             background-color: #0A7C6E;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 20px;
-            flex-shrink: 0;
+            line-height: 1;
         }
         .header-top h1 {
             color: #ffffff;
-            font-size: 19px;
+            font-size: 18px;
             font-weight: 600;
+            line-height: 1.3;
         }
         .header-top p {
-            color: rgba(255, 255, 255, 0.55);
-            font-size: 13px;
-            margin-top: 2px;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 12.5px;
+            margin-top: 3px;
+            line-height: 1.3;
         }
         .badge-row {
             display: flex;
@@ -69,26 +72,27 @@
             display: inline-block;
             padding: 5px 12px;
             border-radius: 20px;
-            font-size: 12px;
+            font-size: 11.5px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.4px;
+            line-height: 1.4;
         }
         .badge-inquiry {
-            background-color: rgba(10, 124, 110, 0.18);
+            background-color: rgba(10, 124, 110, 0.22);
             color: #6CE0CD;
         }
         .badge-source {
             background-color: rgba(255, 255, 255, 0.1);
-            color: rgba(255, 255, 255, 0.75);
+            color: rgba(255, 255, 255, 0.7);
         }
         .badge-status {
-            background-color: rgba(226, 163, 61, 0.2);
-            color: #E2A33D;
+            background-color: rgba(226, 163, 61, 0.22);
+            color: #F0B860;
         }
 
         .content {
-            padding: 28px 30px 10px;
+            padding: 26px 28px 8px;
         }
 
         /* Sender card */
@@ -96,51 +100,58 @@
             display: flex;
             align-items: center;
             gap: 14px;
-            padding: 16px;
+            padding: 18px;
             background-color: #F5F8F5;
             border-radius: 12px;
-            margin-bottom: 22px;
+            margin-bottom: 24px;
         }
         .sender-avatar {
-            width: 48px;
-            height: 48px;
+            width: 46px;
+            height: 46px;
+            min-width: 46px;
             border-radius: 50%;
             background-color: #0A7C6E;
-            color: #ffffff;
-            font-size: 18px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
+            display: table;
         }
-        .sender-name {
+        .sender-avatar span {
+            display: table-cell;
+            vertical-align: middle;
+            text-align: center;
+            color: #ffffff;
             font-size: 17px;
             font-weight: 700;
+            line-height: 1;
+        }
+        .sender-name {
+            font-size: 16px;
+            font-weight: 700;
             color: #14181C;
+            line-height: 1.3;
         }
         .sender-contact {
-            font-size: 14px;
+            font-size: 13.5px;
             color: #5B6660;
-            margin-top: 2px;
+            margin-top: 3px;
+            line-height: 1.5;
         }
         .sender-contact a {
             color: #075E53;
             text-decoration: none;
         }
-        .sender-contact span {
-            margin-right: 10px;
+        .sender-contact .sep {
+            color: #c7d0cc;
+            margin: 0 6px;
         }
 
         /* Detail list */
         .detail-list {
-            margin-bottom: 22px;
+            margin-bottom: 24px;
         }
         .detail-row {
             display: flex;
             justify-content: space-between;
-            align-items: baseline;
-            padding: 11px 0;
+            align-items: center;
+            padding: 12px 2px;
             border-bottom: 1px solid #E4E9E4;
         }
         .detail-row:last-child {
@@ -167,9 +178,9 @@
             border-left: 3px solid #0A7C6E;
             border-radius: 0 10px 10px 0;
             padding: 16px 18px;
-            margin-bottom: 24px;
+            margin-bottom: 26px;
             font-size: 14.5px;
-            line-height: 1.7;
+            line-height: 1.65;
             color: #2A3330;
             white-space: pre-line;
         }
@@ -181,45 +192,53 @@
             font-weight: 700;
             margin-bottom: 8px;
             display: block;
+            line-height: 1;
         }
 
         /* Primary CTA */
         .action-button {
             text-align: center;
-            margin-bottom: 26px;
+            margin-bottom: 22px;
         }
         .button {
             display: inline-block;
             background-color: #0A7C6E;
-            color: #ffffff;
-            padding: 13px 34px;
+            color: #ffffff !important;
+            padding: 14px 36px;
             text-decoration: none;
             border-radius: 8px;
             font-weight: 600;
             font-size: 15px;
+            line-height: 1 !important;
+            white-space: nowrap;
             box-shadow: 0 2px 4px rgba(10, 124, 110, 0.3);
-        }
-        .button:hover {
-            background-color: #075E53;
         }
 
         /* Quick action buttons */
         .quick-actions-row {
             display: flex;
             gap: 10px;
-            margin-bottom: 10px;
+            margin-bottom: 24px;
         }
         .quick-action-btn {
             flex: 1;
+            display: block;
             text-align: center;
-            padding: 11px 10px;
+            padding: 12px 8px;
             border-radius: 8px;
-            background-color: #F5F8F5;
-            border: 1px solid #E4E9E4;
-            color: #075E53;
+            background-color: #E1F3F0;
+            color: #075E53 !important;
             font-size: 13px;
             font-weight: 600;
+            line-height: 1.2 !important;
             text-decoration: none;
+            white-space: nowrap;
+        }
+
+        hr.divider {
+            border: none;
+            border-top: 1px solid #E4E9E4;
+            margin: 4px 0 22px;
         }
 
         .footer {
@@ -227,7 +246,6 @@
             padding: 25px 30px;
             text-align: center;
             border-top: 1px solid #E4E9E4;
-            margin-top: 10px;
         }
         .footer p {
             color: #5B6660;
@@ -241,18 +259,10 @@
 
         @media (max-width: 600px) {
             .content {
-                padding: 22px 20px 5px;
+                padding: 22px 18px 4px;
             }
             .header {
-                padding: 22px 20px;
-            }
-            .detail-row {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-            .detail-value {
-                text-align: left;
-                margin-top: 2px;
+                padding: 22px 18px 18px;
             }
         }
     </style>
@@ -276,13 +286,14 @@
 
         <div class="content">
             <div class="sender-card">
-                <div class="sender-avatar">{{ strtoupper(substr($name, 0, 1)) }}</div>
+                <div class="sender-avatar"><span>{{ strtoupper(substr($name, 0, 1)) }}</span></div>
                 <div>
                     <div class="sender-name">{{ $name }}</div>
                     <div class="sender-contact">
-                        <span><a href="mailto:{{ $email }}">{{ $email }}</a></span>
+                        <a href="mailto:{{ $email }}">{{ $email }}</a>
                         @if($phone)
-                        <span><a href="tel:{{ $phone }}">{{ $phone }}</a></span>
+                        <span class="sep">&bull;</span>
+                        <a href="tel:{{ $phone }}">{{ $phone }}</a>
                         @endif
                     </div>
                 </div>
@@ -309,20 +320,22 @@
             @endif
 
             <div class="action-button">
-                <a href="{{ $appUrl }}/admin/contact-us/{{ $contactId }}" class="button" target="_blank">View &amp; Respond →</a>
+                <a href="{{ $appUrl }}/admin/contact-us/{{ $contactId }}" class="button" target="_blank">View &amp; Respond</a>
             </div>
 
             <div class="quick-actions-row">
-                <a href="mailto:{{ $email }}" class="quick-action-btn">✉ Reply by Email</a>
+                <a href="mailto:{{ $email }}" class="quick-action-btn">Reply by Email</a>
                 @if($phone)
-                <a href="tel:{{ $phone }}" class="quick-action-btn">📞 Call {{ $name }}</a>
+                <a href="tel:{{ $phone }}" class="quick-action-btn">Call {{ $name }}</a>
                 @endif
             </div>
+
+            <hr class="divider">
         </div>
 
         <div class="footer">
 <!-- App download badges -->
-<table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto; padding:20px 0 10px 0;">
+<table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto; padding:0 0 10px 0;">
 <tr>
 <td style="padding:0 5px;"><a href="https://apps.apple.com/pk/app/staffoo/id6798964069" target="_blank"><img src="https://apis.staffoo.com.au/uploads/app-store-badge.png" alt="Download on the App Store" width="120" height="41" style="display:block; border:0; width:120px; height:auto;"></a></td>
 <td style="padding:0 5px;"><a href="https://play.google.com/store/apps/details?id=com.staffoo" target="_blank"><img src="https://apis.staffoo.com.au/uploads/google-play-badge.png" alt="Get it on Google Play" width="120" height="41" style="display:block; border:0; width:120px; height:auto;"></a></td>
