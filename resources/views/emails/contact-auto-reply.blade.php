@@ -284,7 +284,6 @@
                 &nbsp;&bull;&nbsp;
                 <a href="tel:{{ $supportPhone }}">{{ $supportPhone }}</a>
                 @endif
-                <p>{{ $supportHours }}</p>
             </div>
 
             <div class="signature">

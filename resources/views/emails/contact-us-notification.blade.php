@@ -191,6 +191,27 @@
             line-height: 1;
         }
 
+        /* Quick action buttons */
+        .quick-actions-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 28px;
+        }
+        .quick-action-btn {
+            flex: 1;
+            display: block;
+            text-align: center;
+            padding: 12px 8px;
+            border-radius: 8px;
+            background-color: #E1F3F0;
+            color: #075E53 !important;
+            font-size: 13px;
+            font-weight: 600;
+            line-height: 1.2 !important;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
         .footer {
             background-color: #F5F8F5;
             padding: 25px 30px;
@@ -267,6 +288,13 @@
                 "{{ $contactMessage }}"
             </div>
             @endif
+
+            <div class="quick-actions-row">
+                <a href="mailto:{{ $email }}" class="quick-action-btn">Reply by Email</a>
+                @if($phone)
+                <a href="tel:{{ $phone }}" class="quick-action-btn">Call {{ $name }}</a>
+                @endif
+            </div>
         </div>
 
         <div class="footer">
