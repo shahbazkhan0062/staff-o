@@ -28,39 +28,35 @@
             box-shadow: 0 4px 6px -1px rgba(10, 25, 48, 0.08), 0 2px 4px -1px rgba(10, 25, 48, 0.05);
         }
 
+        /* Logo band */
+        .logo-band {
+            background-color: #ffffff;
+            text-align: center;
+            padding: 22px 20px 18px;
+            border-bottom: 1px solid #E4E9E4;
+        }
+        .logo-band img {
+            max-width: 150px;
+            height: auto;
+            display: inline-block;
+        }
+
         /* Header */
         .header {
             background-color: #0a1930;
-            padding: 26px 28px 22px;
+            padding: 26px 28px;
         }
-        .header-top {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            margin-bottom: 18px;
-        }
-        .header-icon {
-            width: 42px;
-            height: 42px;
-            min-width: 42px;
-            border-radius: 11px;
-            background-color: #0A7C6E;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            line-height: 1;
-        }
-        .header-top h1 {
+        .header h1 {
             color: #ffffff;
             font-size: 18px;
             font-weight: 600;
             line-height: 1.3;
         }
-        .header-top p {
+        .header p {
             color: rgba(255, 255, 255, 0.5);
             font-size: 12.5px;
-            margin-top: 3px;
+            margin-top: 4px;
+            margin-bottom: 18px;
             line-height: 1.3;
         }
         .badge-row {
@@ -92,7 +88,7 @@
         }
 
         .content {
-            padding: 26px 28px 8px;
+            padding: 30px 28px 8px;
         }
 
         /* Sender card */
@@ -103,7 +99,7 @@
             padding: 18px;
             background-color: #F5F8F5;
             border-radius: 12px;
-            margin-bottom: 24px;
+            margin-bottom: 28px;
         }
         .sender-avatar {
             width: 46px;
@@ -145,13 +141,13 @@
 
         /* Detail list */
         .detail-list {
-            margin-bottom: 24px;
+            margin-bottom: 28px;
         }
         .detail-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 2px;
+            padding: 13px 2px;
             border-bottom: 1px solid #E4E9E4;
         }
         .detail-row:last-child {
@@ -177,8 +173,8 @@
             background-color: #F5F8F5;
             border-left: 3px solid #0A7C6E;
             border-radius: 0 10px 10px 0;
-            padding: 16px 18px;
-            margin-bottom: 26px;
+            padding: 18px 20px;
+            margin-bottom: 30px;
             font-size: 14.5px;
             line-height: 1.65;
             color: #2A3330;
@@ -193,52 +189,6 @@
             margin-bottom: 8px;
             display: block;
             line-height: 1;
-        }
-
-        /* Primary CTA */
-        .action-button {
-            text-align: center;
-            margin-bottom: 22px;
-        }
-        .button {
-            display: inline-block;
-            background-color: #0A7C6E;
-            color: #ffffff !important;
-            padding: 14px 36px;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 15px;
-            line-height: 1 !important;
-            white-space: nowrap;
-            box-shadow: 0 2px 4px rgba(10, 124, 110, 0.3);
-        }
-
-        /* Quick action buttons */
-        .quick-actions-row {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 24px;
-        }
-        .quick-action-btn {
-            flex: 1;
-            display: block;
-            text-align: center;
-            padding: 12px 8px;
-            border-radius: 8px;
-            background-color: #E1F3F0;
-            color: #075E53 !important;
-            font-size: 13px;
-            font-weight: 600;
-            line-height: 1.2 !important;
-            text-decoration: none;
-            white-space: nowrap;
-        }
-
-        hr.divider {
-            border: none;
-            border-top: 1px solid #E4E9E4;
-            margin: 4px 0 22px;
         }
 
         .footer {
@@ -259,24 +209,23 @@
 
         @media (max-width: 600px) {
             .content {
-                padding: 22px 18px 4px;
+                padding: 24px 18px 4px;
             }
             .header {
-                padding: 22px 18px 18px;
+                padding: 22px 18px;
             }
         }
     </style>
 </head>
 <body>
     <div class="email-container">
+        <div class="logo-band">
+            <img src="https://apis.staffoo.com.au/uploads/staffologo.png" alt="Staffoo">
+        </div>
+
         <div class="header">
-            <div class="header-top">
-                <div class="header-icon">📬</div>
-                <div>
-                    <h1>New Contact Submission</h1>
-                    <p>Received {{ $submittedAt }}</p>
-                </div>
-            </div>
+            <h1>New Contact Submission</h1>
+            <p>Received {{ $submittedAt }}</p>
             <div class="badge-row">
                 <span class="badge badge-inquiry">{{ $inquiryType }}</span>
                 <span class="badge badge-source">{{ $source }}</span>
@@ -318,19 +267,6 @@
                 "{{ $contactMessage }}"
             </div>
             @endif
-
-            <div class="action-button">
-                <a href="{{ $appUrl }}/admin/contact-us/{{ $contactId }}" class="button" target="_blank">View &amp; Respond</a>
-            </div>
-
-            <div class="quick-actions-row">
-                <a href="mailto:{{ $email }}" class="quick-action-btn">Reply by Email</a>
-                @if($phone)
-                <a href="tel:{{ $phone }}" class="quick-action-btn">Call {{ $name }}</a>
-                @endif
-            </div>
-
-            <hr class="divider">
         </div>
 
         <div class="footer">
