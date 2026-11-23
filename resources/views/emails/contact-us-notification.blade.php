@@ -191,30 +191,6 @@
             line-height: 1;
         }
 
-        /* Quick action buttons */
-        .quick-actions-row {
-            display: flex;
-            margin-bottom: 28px;
-        }
-        .quick-action-btn {
-            flex: 1;
-            display: block;
-            text-align: center;
-            padding: 12px 8px;
-            border-radius: 8px;
-            background-color: #E1F3F0;
-            color: #075E53 !important;
-            font-size: 13px;
-            font-weight: 600;
-            line-height: 1.2 !important;
-            text-decoration: none;
-            white-space: nowrap;
-            margin-right: 20px;
-        }
-        .quick-action-btn:last-child {
-            margin-right: 0;
-        }
-
         .footer {
             background-color: #F5F8F5;
             padding: 25px 30px;
@@ -292,12 +268,18 @@
             </div>
             @endif
 
-            <div class="quick-actions-row">
-                <a href="mailto:{{ $email }}" class="quick-action-btn">Reply by Email</a>
-                @if($phone)
-                <a href="tel:{{ $phone }}" class="quick-action-btn">Call {{ $name }}</a>
-                @endif
-            </div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 28px;">
+                <tr>
+                    <td width="50%" style="padding-right: 10px;">
+                        <a href="mailto:{{ $email }}" style="display:block; text-align:center; padding:12px 8px; border-radius:8px; background-color:#E1F3F0; color:#075E53; font-size:13px; font-weight:600; line-height:1.2; text-decoration:none; white-space:nowrap;">Reply by Email</a>
+                    </td>
+                    @if($phone)
+                    <td width="50%" style="padding-left: 10px;">
+                        <a href="tel:{{ $phone }}" style="display:block; text-align:center; padding:12px 8px; border-radius:8px; background-color:#E1F3F0; color:#075E53; font-size:13px; font-weight:600; line-height:1.2; text-decoration:none; white-space:nowrap;">Call {{ $name }}</a>
+                    </td>
+                    @endif
+                </tr>
+            </table>
         </div>
 
         <div class="footer">
