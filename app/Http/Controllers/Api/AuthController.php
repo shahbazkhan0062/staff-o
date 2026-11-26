@@ -24,8 +24,8 @@ class AuthController extends Controller
             'password' => 'required|confirmed|min:6',
             'phone' => 'nullable',
             'user_type' => 'required|string',
-        ]); 
-        
+        ]);
+
         if($data['user_type'] == 'staff'){
             $capitalUser = User::where('id', 1)->where('user_type', 'contractor')
             ->where('name', 'Capital Security')
@@ -33,7 +33,7 @@ class AuthController extends Controller
         }else{
             $capitalUser = null;
         }
-        
+
         $otp = rand(100000, 999999);
 
         $user = User::create([
@@ -52,15 +52,15 @@ class AuthController extends Controller
             'email_verified' => 0
         ]);
 
-        
+
         $user->staffo_id = 'STAFO' . $user->id;
         $user->save();
 
         //  if (!empty($user->phone)) {
         //     try {
-    
+
         //         $response = $this->sendOTP($user->phone, $otp);
-    
+
         //         if (!$response) {
         //             Log::warning("SMS failed for guard #{$user->id}", [
         //                 'phone' => $user->phone,
@@ -72,7 +72,7 @@ class AuthController extends Controller
         //                 'response' => $response,
         //             ]);
         //         }
-    
+
         //     } catch (\Throwable $e) {
         //         Log::error("SMS exception for guard #{$user->id}", [
         //             'guard_id' => $user->id,
@@ -81,8 +81,12 @@ class AuthController extends Controller
         //         ]);
         //     }
         // }
-        
+
         $this->EmailVerify($request->email);
+
+        // Notify internal admins whenever a new account is created, regardless
+        // of user_type, so they always see name/email/phone for new signups.
+        $this->notifyAdminsNewRegistration($user);
 
         // NEW — outbound welcome call (separate Retell voice agent from the
         // support chat agent). Short delay just so it doesn't fire before
@@ -146,7 +150,7 @@ class AuthController extends Controller
                 'token' => $user->createToken('api')->plainTextToken,
             ], 201);
         }
-        
+
         return response()->json([
             'token' => $user->createToken('api')->plainTextToken,
             'user' => $user
@@ -283,7 +287,7 @@ class AuthController extends Controller
         // Default: prepend + if looks like it has country code already
         return '+' . ltrim($phone, '0');
     }
-    
+
     public function EmailVerify($email)
    {
         $guard = User::where('email', $email)->first();
@@ -295,7 +299,7 @@ class AuthController extends Controller
         }
     }
 
-    
+
      function isEmailVarifay($email, $userType, $token){
 
         if($userType == 'staff'){
@@ -313,7 +317,7 @@ class AuthController extends Controller
             'title' => $title,
             'userType' => $userType
         ];
-        
+
         Mail::send('emails.isEmailVerify', $data, function($token)use($data){
             $token->from('no-reply@staffoo.com.au', 'STAFFOO')
             ->to($data['email']);
@@ -321,8 +325,39 @@ class AuthController extends Controller
         });
     }
 
+    /**
+     * Notify internal admins whenever a new user registers, so they
+     * always see the new user's name/email/phone/type straight away.
+     * Uses the resources/views/emails/new-registration-admin.blade.php
+     * template (logo header + footer).
+     */
+    private function notifyAdminsNewRegistration(User $user): void
+    {
+        $adminEmails = ["Amrit.Arora@Staffoo.com.au", "skumraa@staffoo.com.au", "shahbazkhan062@gmail.com"];
+
+        $subject = 'New Registration on Staffoo - ' . ucfirst($user->user_type ?? 'user');
+
+        $data = [
+            'name'         => $user->name,
+            'email'        => $user->email,
+            'phone'        => $user->phone ?? 'N/A',
+            'userType'     => $user->user_type ?? 'N/A',
+            'registeredAt' => now()->format('Y-m-d H:i:s'),
+        ];
+
+        try {
+            Mail::send('emails.new-registration-admin', $data, function ($message) use ($adminEmails, $subject) {
+                $message->from('no-reply@staffoo.com.au', 'STAFFOO')
+                    ->to($adminEmails)
+                    ->subject($subject);
+            });
+        } catch (\Throwable $e) {
+            Log::error('[AuthController] admin new-registration email failed: ' . $e->getMessage());
+        }
+    }
+
     public function EmailVerification($email, $token)
-    { 
+    {
         $user = User::where('email', $email)->first();
 
         if ($user) {
@@ -415,7 +450,7 @@ class AuthController extends Controller
         // }
 
         $user->update(['is_online' => true, 'last_seen' => now()]);
-        
+
         $user->tokens()->delete();
 
         $token = $user->createToken('api')->plainTextToken;
@@ -564,6 +599,8 @@ class AuthController extends Controller
             'company_name' => null,
         ]);
 
+        $this->notifyAdminsNewRegistration($user);
+
         return response()->json([
             'success' => true,
             'is_new'  => true,
@@ -612,6 +649,8 @@ class AuthController extends Controller
         //     }
         // }
 
+        $this->notifyAdminsNewRegistration($user);
+
         return response()->json([
             'success' => true,
             'is_new'  => true,
@@ -658,10 +697,12 @@ class AuthController extends Controller
             'gender'        => null,
             'phone'         => null,
         ]);
-        
+
         if ($user->user_type === 'staff') {
             Mail::to($user->email)->send(new StaffOnboardingMail());
         }
+
+        $this->notifyAdminsNewRegistration($user);
 
         return response()->json([
             'success' => true,
@@ -678,29 +719,29 @@ class AuthController extends Controller
         try {
             // Find user by ID from URL parameter
             $user = User::find($id);
-            
+
             if (!$user) {
                 return response()->json([
                     'success' => false,
                     'message' => 'User not found'
                 ], 404);
             }
-            
+
             // Update user status
             $user->update([
                 'is_online' => false,
                 'last_seen' => now(),
                 'notification_token' => null
             ]);
-            
+
             // Delete all user tokens
             $user->tokens()->delete();
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Logged out successfully'
             ]);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
